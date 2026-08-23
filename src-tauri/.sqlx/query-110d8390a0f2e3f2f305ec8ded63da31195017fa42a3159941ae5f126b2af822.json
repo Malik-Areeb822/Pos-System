@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR REPLACE INTO invoice_counter (id, year, sequence) VALUES (1, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "110d8390a0f2e3f2f305ec8ded63da31195017fa42a3159941ae5f126b2af822"
+}

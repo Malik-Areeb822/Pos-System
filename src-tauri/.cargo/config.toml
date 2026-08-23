@@ -1,0 +1,2 @@
+[env]
+DATABASE_URL = "sqlite://C:/ProgramData/CityTiles/citytiles.db"

@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT \n            date(created_at) as date,\n            SUM(total) as total_sales,\n            COUNT(*) as invoice_count,\n            SUM(CASE WHEN payment_method = 'cash' THEN total ELSE 0 END) as cash_sales,\n            SUM(CASE WHEN payment_method = 'credit' THEN total ELSE 0 END) as credit_sales,\n            SUM(CASE WHEN payment_method = 'bank' THEN total ELSE 0 END) as bank_sales\n        FROM invoices\n        WHERE date(created_at) BETWEEN ? AND ?\n        GROUP BY date(created_at)\n        ORDER BY date(created_at)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "date",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "total_sales",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "invoice_count",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "cash_sales",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "credit_sales",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "bank_sales",
+        "ordinal": 5,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b9858cf698cec2634ebdd0239f8d4e223f636f3221a03b93096c2a12974cf86c"
+}

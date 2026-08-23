@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE customers SET outstanding_balance = outstanding_balance - ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "0e533d023d938256fce3986c562f5cd0cbdf470b8b956151887998bfc6b8264b"
+}

@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT u.id, u.email, u.full_name, u.phone, u.employee_id, u.status, u.created_at, u.updated_at\n               FROM users u\n               JOIN user_roles ur ON u.id = ur.user_id\n               WHERE u.id = ? AND ur.role = 'cashier'",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "email",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "full_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "phone",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "employee_id",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "status",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 7,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e762cc155da9052b5f62d9d25b481b105b5095daadb4d1139ffe71e49943152c"
+}

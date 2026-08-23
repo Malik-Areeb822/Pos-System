@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT year, sequence FROM invoice_counter WHERE id = 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "year",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "sequence",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "597c024d20b6e66432426fc88f564860d5f88082e88204645110cf52e981ac01"
+}

@@ -1,0 +1,68 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT id, name, sku, category, stock_qty, low_stock_threshold, unit, price,\n               (stock_qty * price) as value\n        FROM products\n        WHERE is_published = 1\n        ORDER BY category, name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "sku",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "category",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "stock_qty",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "low_stock_threshold",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "unit",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "price",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "value",
+        "ordinal": 8,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "656a9ea97381308df25a642c0971cc057b066d7d1c7ebf19b3ad7423058cba6a"
+}

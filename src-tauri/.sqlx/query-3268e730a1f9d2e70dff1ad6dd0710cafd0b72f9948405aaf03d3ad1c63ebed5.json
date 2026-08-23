@@ -1,0 +1,116 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, name, sku, category, description, color, size, finish, unit, price, pieces_per_carton, stock_qty, low_stock_threshold, image_url, is_published, created_at, updated_at FROM products ORDER BY name",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "sku",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "category",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "color",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "size",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "finish",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "unit",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "price",
+        "ordinal": 9,
+        "type_info": "Integer"
+      },
+      {
+        "name": "pieces_per_carton",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "stock_qty",
+        "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "low_stock_threshold",
+        "ordinal": 12,
+        "type_info": "Integer"
+      },
+      {
+        "name": "image_url",
+        "ordinal": 13,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_published",
+        "ordinal": 14,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 15,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 16,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3268e730a1f9d2e70dff1ad6dd0710cafd0b72f9948405aaf03d3ad1c63ebed5"
+}

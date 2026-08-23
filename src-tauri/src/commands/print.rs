@@ -1,0 +1,31 @@
+// src-tauri/src/commands/print.rs
+use tauri::{State, AppHandle};
+use crate::auth::middleware::require_cashier_or_admin;
+use crate::DbPool;
+use crate::error::AppError;
+
+#[tauri::command]
+pub async fn print_receipt(app: AppHandle, pool: State<'_, DbPool>, invoice_id: String, auth_header: Option<String>) -> Result<(), AppError> {
+    require_cashier_or_admin(&app, auth_header).await?;
+    crate::services::print::print_receipt(&app, &pool, &invoice_id).await
+}
+
+#[tauri::command]
+pub async fn print_invoice_pdf(app: AppHandle, pool: State<'_, DbPool>, invoice_id: String, auth_header: Option<String>) -> Result<String, AppError> {
+    require_cashier_or_admin(&app, auth_header).await?;
+    crate::services::invoice_pdf::generate_invoice_pdf(&app, &pool, &invoice_id).await
+}
+
+#[tauri::command]
+pub async fn list_usb_printers(_app: AppHandle, _auth: Option<String>) -> Result<Vec<UsbPrinterInfo>, AppError> {
+    crate::services::print::list_usb_printers().await
+}
+
+#[derive(serde::Serialize)]
+pub struct UsbPrinterInfo {
+    pub vid: u16,
+    pub pid: u16,
+    pub manufacturer: Option<String>,
+    pub product: Option<String>,
+    pub serial_number: Option<String>,
+}

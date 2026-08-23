@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(SUM(outstanding_balance), 0) FROM customers WHERE outstanding_balance > 0",
+  "describe": {
+    "columns": [
+      {
+        "name": "COALESCE(SUM(outstanding_balance), 0)",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9037611be3c3f72f377d73b627d55884139772b7d7d021c9c39ad6a209a3ba17"
+}

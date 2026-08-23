@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT customer_id, payment_method, total FROM invoices WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "customer_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "payment_method",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "total",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "a72b7ef9bf38b1cbe870015ff82df204b636010739e196c89789459130fc0426"
+}

@@ -1,0 +1,80 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, invoice_id, product_id, product_name, quantity, unit, unit_price, line_total, reason, processed_by, created_at FROM returns ORDER BY created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "invoice_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "product_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "product_name",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "quantity",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "unit",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "unit_price",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "line_total",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "reason",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "processed_by",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 10,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a45e8e7d74349760c46806aaf1d828c9c16ccf841d5bc7c72119a22714a522bc"
+}

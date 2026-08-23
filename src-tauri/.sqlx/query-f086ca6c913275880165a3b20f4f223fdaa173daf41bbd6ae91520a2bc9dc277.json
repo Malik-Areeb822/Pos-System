@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(SUM(total), 0) FROM invoices WHERE date(created_at) = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "COALESCE(SUM(total), 0)",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f086ca6c913275880165a3b20f4f223fdaa173daf41bbd6ae91520a2bc9dc277"
+}

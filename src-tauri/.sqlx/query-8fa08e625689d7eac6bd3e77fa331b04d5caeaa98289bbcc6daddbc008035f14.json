@@ -1,0 +1,92 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "invoice_no",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "customer_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "customer_name",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "subtotal",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "discount",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "total",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "amount_paid",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "payment_method",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "notes",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "delivery_date",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 12,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "8fa08e625689d7eac6bd3e77fa331b04d5caeaa98289bbcc6daddbc008035f14"
+}
