@@ -4,5 +4,3 @@ pub mod invoice_pdf;
 pub mod pos;
 pub mod inventory;
 pub mod returns;
-pub mod reports;
-pub mod backup;

@@ -156,9 +156,9 @@ export interface ReturnsApi {
 }
 
 export interface ReportsApi {
-  getDashboard(): Promise<DashboardData>;
-  getSales(params: ReportParams): Promise<SalesReport>;
-  getInventory(): Promise<InventoryReport>;
+  getDashboard(): Promise<DashboardStats>;
+  getSales(params: ReportParams): Promise<SalesReportItem[]>;
+  getInventory(): Promise<InventoryReportItem[]>;
 }
 
 export interface CashiersApi {
@@ -306,36 +306,38 @@ export interface CreateReturnInput {
   reason: string;
 }
 
-export interface DashboardData {
-  total_revenue: number;
-  total_orders: number;
-  total_customers: number;
-  outstanding_balance: number;
+// Wire-shape truth: these mirror the serde structs in src-tauri/src/commands/reports.rs
+export interface DashboardStats {
+  total_sales_today: number;
+  total_invoices_today: number;
   low_stock_count: number;
-  recent_invoices: Invoice[];
+  outstanding_balance: number;
 }
 
 export interface ReportParams {
   from?: string;
   to?: string;
-  category?: string;
 }
 
-export interface SalesReport {
-  total_revenue: number;
-  total_orders: number;
-  average_order_value: number;
-  by_payment_method: Record<string, number>;
-  by_category: Record<string, number>;
-  daily: Array<{ date: string; revenue: number; orders: number }>;
+export interface SalesReportItem {
+  date: string;
+  total_sales: number;
+  invoice_count: number;
+  cash_sales: number;
+  credit_sales: number;
+  bank_sales: number;
 }
 
-export interface InventoryReport {
-  total_products: number;
-  total_stock_value: number;
-  low_stock_products: Product[];
-  out_of_stock_products: Product[];
-  by_category: Record<string, { count: number; value: number }>;
+export interface InventoryReportItem {
+  id: string;
+  name: string;
+  sku: string | null;
+  category: string;
+  stock_qty: number;
+  low_stock_threshold: number;
+  unit: string;
+  price: number;
+  value: number;
 }
 
 export interface StaffProfile {

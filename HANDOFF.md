@@ -86,6 +86,19 @@ walk-in or named customer alike. Customer `outstanding_balance` is a mirror main
 6. **JWT secret**: hardcoded fallback `"citytiles-pos-secret-change-in-production"` ships in
    binary (config.rs). Acceptable for offline single-shop deployment; rotate before wider use.
 
+### Semantic Divergences — documented, intentionally NOT fixed (2026-08-23 type-truth cleanup)
+
+TS types now mirror Rust payloads exactly (`DashboardStats`, `SalesReportItem[]`, `InventoryReportItem[]`).
+The UI continues to compute displayed numbers client-side from invoice/product lists. Backend aggregates
+remain unused by the UI; these semantic gaps are recorded so nobody "fixes" them accidentally later:
+
+1. **Sales aggregates don't net returns** — `get_sales_report` sums invoices only.
+2. **Rust day boundary is UTC** (`commands/reports.rs` uses `date(created_at)` vs `Utc::now()`) — Pakistan is
+   UTC+5; adopting server aggregates later would visibly shift the "today" window by ~5 hours.
+3. **`outstanding_balance` semantics differ** — Rust sums `customers.outstanding_balance > 0`;
+   the dashboard card sums `max(0, total − amount_paid)` over invoices client-side.
+4. **`low_stock_count` filters `is_published = 1`** in Rust; the dashboard card does not filter.
+
 ## 🔒 Locked Decisions
 
 | Decision | Value |
