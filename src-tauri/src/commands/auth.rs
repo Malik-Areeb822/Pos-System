@@ -50,8 +50,9 @@ pub struct AdminExistsOutput {
 }
 
 #[tauri::command]
-pub async fn login(pool: State<'_, DbPool>, input: LoginInput) -> Result<LoginOutput, AppError> {
-    let repo = UserRepository::new(pool.inner().clone());
+pub async fn login(db: State<'_, crate::database::Db>, input: LoginInput) -> Result<LoginOutput, AppError> {
+    let pool = db.pool().await;
+    let repo = UserRepository::new(pool);
     let user = repo.get_by_email(&input.email).await?
         .ok_or(AppError::InvalidCredentials)?;
 
@@ -79,8 +80,9 @@ pub async fn login(pool: State<'_, DbPool>, input: LoginInput) -> Result<LoginOu
 }
 
 #[tauri::command]
-pub async fn register(app: AppHandle, pool: State<'_, DbPool>, input: RegisterInput) -> Result<RegisterOutput, AppError> {
-    let repo = UserRepository::new(pool.inner().clone());
+pub async fn register(app: AppHandle, db: State<'_, crate::database::Db>, input: RegisterInput) -> Result<RegisterOutput, AppError> {
+    let pool = db.pool().await;
+    let repo = UserRepository::new(pool);
     
     // Check if email exists
     if repo.get_by_email(&input.email).await?.is_some() {
@@ -129,9 +131,10 @@ pub async fn register(app: AppHandle, pool: State<'_, DbPool>, input: RegisterIn
 }
 
 #[tauri::command]
-pub async fn me(app: AppHandle, pool: State<'_, DbPool>, auth_header: Option<String>) -> Result<UserInfo, AppError> {
+pub async fn me(app: AppHandle, db: State<'_, crate::database::Db>, auth_header: Option<String>) -> Result<UserInfo, AppError> {
     let claims = crate::auth::middleware::get_current_user(&app, auth_header).await?;
-    let repo = UserRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = UserRepository::new(pool);
     let user = repo.get_by_id(&claims.sub).await?.ok_or(AppError::NotFound("User not found".into()))?;
     
     Ok(UserInfo {
@@ -150,14 +153,15 @@ pub async fn logout() -> Result<(), AppError> {
 }
 
 #[tauri::command]
-pub async fn check_admin_exists(pool: State<'_, DbPool>) -> Result<AdminExistsOutput, AppError> {
-    let repo = UserRepository::new(pool.inner().clone());
+pub async fn check_admin_exists(db: State<'_, crate::database::Db>) -> Result<AdminExistsOutput, AppError> {
+    let pool = db.pool().await;
+    let repo = UserRepository::new(pool);
     let count = repo.count().await?;
     Ok(AdminExistsOutput { exists: count > 0 })
 }
 
 #[tauri::command]
-pub async fn get_roles(app: AppHandle, pool: State<'_, DbPool>, auth_header: Option<String>) -> Result<Vec<String>, AppError> {
+pub async fn get_roles(app: AppHandle, db: State<'_, crate::database::Db>, auth_header: Option<String>) -> Result<Vec<String>, AppError> {
     let claims = crate::auth::middleware::require_admin(&app, auth_header).await?;
     Ok(claims.roles)
 }

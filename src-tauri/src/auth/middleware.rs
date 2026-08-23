@@ -35,8 +35,8 @@ pub async fn require_cashier_or_admin(app: &AppHandle, auth_header: Option<Strin
 }
 
 pub async fn get_user_from_db(app: &AppHandle, user_id: &str) -> Result<crate::repositories::users::User, AppError> {
-    let pool = app.try_state::<DbPool>()
+    let db = app.try_state::<crate::database::Db>()
         .ok_or_else(|| AppError::Internal("DB pool not available".into()))?;
-    let repo = UserRepository::new(pool.inner().clone());
+    let repo = UserRepository::new(db.pool().await);
     repo.get_by_id(user_id).await?.ok_or(AppError::NotFound("User not found".into()))
 }

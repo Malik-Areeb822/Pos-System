@@ -29,43 +29,48 @@ pub struct ResetPasswordInput {
 }
 
 #[tauri::command]
-pub async fn list_cashiers(app: AppHandle, pool: State<'_, DbPool>, auth_header: Option<String>) -> Result<Vec<Cashier>, AppError> {
+pub async fn list_cashiers(app: AppHandle, db: State<'_, crate::database::Db>, auth_header: Option<String>) -> Result<Vec<Cashier>, AppError> {
     require_admin(&app, auth_header).await?;
-    let repo = CashierRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = CashierRepository::new(pool);
     repo.list().await
 }
 
 #[tauri::command]
-pub async fn approve_cashier(app: AppHandle, pool: State<'_, DbPool>, input: ApproveCashierInput, auth_header: Option<String>) -> Result<Cashier, AppError> {
+pub async fn approve_cashier(app: AppHandle, db: State<'_, crate::database::Db>, input: ApproveCashierInput, auth_header: Option<String>) -> Result<Cashier, AppError> {
     require_admin(&app, auth_header).await?;
-    let repo = CashierRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = CashierRepository::new(pool);
     let cashier = repo.update_status(&input.id, "approved").await?;
     crate::events::emit_cashiers_changed(&app).await;
     Ok(cashier)
 }
 
 #[tauri::command]
-pub async fn reject_cashier(app: AppHandle, pool: State<'_, DbPool>, input: RejectCashierInput, auth_header: Option<String>) -> Result<Cashier, AppError> {
+pub async fn reject_cashier(app: AppHandle, db: State<'_, crate::database::Db>, input: RejectCashierInput, auth_header: Option<String>) -> Result<Cashier, AppError> {
     require_admin(&app, auth_header).await?;
-    let repo = CashierRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = CashierRepository::new(pool);
     let cashier = repo.update_status(&input.id, "rejected").await?;
     crate::events::emit_cashiers_changed(&app).await;
     Ok(cashier)
 }
 
 #[tauri::command]
-pub async fn suspend_cashier(app: AppHandle, pool: State<'_, DbPool>, input: SuspendCashierInput, auth_header: Option<String>) -> Result<Cashier, AppError> {
+pub async fn suspend_cashier(app: AppHandle, db: State<'_, crate::database::Db>, input: SuspendCashierInput, auth_header: Option<String>) -> Result<Cashier, AppError> {
     require_admin(&app, auth_header).await?;
-    let repo = CashierRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = CashierRepository::new(pool);
     let cashier = repo.update_status(&input.id, "suspended").await?;
     crate::events::emit_cashiers_changed(&app).await;
     Ok(cashier)
 }
 
 #[tauri::command]
-pub async fn reset_password(app: AppHandle, pool: State<'_, DbPool>, input: ResetPasswordInput, auth_header: Option<String>) -> Result<(), AppError> {
+pub async fn reset_password(app: AppHandle, db: State<'_, crate::database::Db>, input: ResetPasswordInput, auth_header: Option<String>) -> Result<(), AppError> {
     require_admin(&app, auth_header).await?;
-    let repo = CashierRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = CashierRepository::new(pool);
     let password_hash = hash_password(&input.new_password)?;
     repo.reset_password(&input.id, &password_hash).await?;
     crate::events::emit_cashiers_changed(&app).await;

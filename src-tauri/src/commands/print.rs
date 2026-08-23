@@ -5,13 +5,15 @@ use crate::DbPool;
 use crate::error::AppError;
 
 #[tauri::command]
-pub async fn print_receipt(app: AppHandle, pool: State<'_, DbPool>, invoice_id: String, auth_header: Option<String>) -> Result<(), AppError> {
+pub async fn print_receipt(app: AppHandle, db: State<'_, crate::database::Db>, invoice_id: String, auth_header: Option<String>) -> Result<(), AppError> {
+    let pool = db.pool().await;
     require_cashier_or_admin(&app, auth_header).await?;
     crate::services::print::print_receipt(&app, &pool, &invoice_id).await
 }
 
 #[tauri::command]
-pub async fn print_invoice_pdf(app: AppHandle, pool: State<'_, DbPool>, invoice_id: String, auth_header: Option<String>) -> Result<String, AppError> {
+pub async fn print_invoice_pdf(app: AppHandle, db: State<'_, crate::database::Db>, invoice_id: String, auth_header: Option<String>) -> Result<String, AppError> {
+    let pool = db.pool().await;
     require_cashier_or_admin(&app, auth_header).await?;
     crate::services::invoice_pdf::generate_invoice_pdf(&app, &pool, &invoice_id).await
 }

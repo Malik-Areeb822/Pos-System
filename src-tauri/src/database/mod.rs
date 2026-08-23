@@ -4,5 +4,5 @@ pub mod seed;
 
 use sqlx::SqlitePool;
 
-pub use connection::{get_pool, init_db, DbPool};
+pub use connection::{init_db, open_pool, Db, DbPool};
 pub use seed::run_seed;

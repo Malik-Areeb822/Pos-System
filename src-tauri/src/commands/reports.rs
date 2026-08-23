@@ -44,33 +44,34 @@ pub struct SalesReportInput {
 }
 
 #[tauri::command]
-pub async fn get_dashboard(pool: State<'_, DbPool>, _auth: Option<String>) -> Result<DashboardStats, AppError> {
+pub async fn get_dashboard(db: State<'_, crate::database::Db>, _auth: Option<String>) -> Result<DashboardStats, AppError> {
+    let pool = db.pool().await;
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     
     let total_sales_today: i64 = sqlx::query_scalar!(
         "SELECT COALESCE(SUM(total), 0) FROM invoices WHERE date(created_at) = ?",
         today
     )
-    .fetch_one(&*pool)
+    .fetch_one(&pool)
     .await?;
     
     let total_invoices_today: i64 = sqlx::query_scalar!(
         "SELECT COUNT(*) FROM invoices WHERE date(created_at) = ?",
         today
     )
-    .fetch_one(&*pool)
+    .fetch_one(&pool)
     .await?;
     
     let low_stock_count: i64 = sqlx::query_scalar!(
         "SELECT COUNT(*) FROM products WHERE stock_qty <= low_stock_threshold AND is_published = 1"
     )
-    .fetch_one(&*pool)
+    .fetch_one(&pool)
     .await?;
     
     let outstanding_balance: i64 = sqlx::query_scalar!(
         "SELECT COALESCE(SUM(outstanding_balance), 0) FROM customers WHERE outstanding_balance > 0"
     )
-    .fetch_one(&*pool)
+    .fetch_one(&pool)
     .await?;
 
     Ok(DashboardStats {
@@ -82,7 +83,8 @@ pub async fn get_dashboard(pool: State<'_, DbPool>, _auth: Option<String>) -> Re
 }
 
 #[tauri::command]
-pub async fn get_sales_report(pool: State<'_, DbPool>, input: SalesReportInput, _auth: Option<String>) -> Result<Vec<SalesReportItem>, AppError> {
+pub async fn get_sales_report(db: State<'_, crate::database::Db>, input: SalesReportInput, _auth: Option<String>) -> Result<Vec<SalesReportItem>, AppError> {
+    let pool = db.pool().await;
     let from = input.from_date.unwrap_or_else(|| {
         chrono::Utc::now().format("%Y-%m-01").to_string()
     });
@@ -106,7 +108,7 @@ pub async fn get_sales_report(pool: State<'_, DbPool>, input: SalesReportInput, 
         "#,
         from, to
     )
-    .fetch_all(&*pool)
+    .fetch_all(&pool)
     .await?;
 
     let report = rows.into_iter().map(|r| SalesReportItem {
@@ -122,7 +124,8 @@ pub async fn get_sales_report(pool: State<'_, DbPool>, input: SalesReportInput, 
 }
 
 #[tauri::command]
-pub async fn get_inventory_report(pool: State<'_, DbPool>, _auth: Option<String>) -> Result<Vec<InventoryReportItem>, AppError> {
+pub async fn get_inventory_report(db: State<'_, crate::database::Db>, _auth: Option<String>) -> Result<Vec<InventoryReportItem>, AppError> {
+    let pool = db.pool().await;
     let rows = sqlx::query!(
         r#"
         SELECT id, name, sku, category, stock_qty, low_stock_threshold, unit, price,
@@ -132,7 +135,7 @@ pub async fn get_inventory_report(pool: State<'_, DbPool>, _auth: Option<String>
         ORDER BY category, name
         "#
     )
-    .fetch_all(&*pool)
+    .fetch_all(&pool)
     .await?;
 
     let report = rows.into_iter().map(|r| InventoryReportItem {

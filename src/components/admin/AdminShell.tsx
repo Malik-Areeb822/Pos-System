@@ -11,6 +11,7 @@ import {
   Store,
   BarChart3,
   UserCog,
+  Settings,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -27,6 +28,7 @@ const NAV = [
   { to: "/admin/returns", label: "Returns", icon: Undo2 },
   { to: "/admin/reports", label: "Reports", icon: BarChart3, adminOnly: true },
   { to: "/admin/cashiers", label: "Cashiers", icon: UserCog, adminOnly: true },
+  { to: "/admin/settings", label: "Settings", icon: Settings, adminOnly: true },
 ];
 
 export function AdminShell({

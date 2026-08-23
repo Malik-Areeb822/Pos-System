@@ -16,3 +16,9 @@ pub async fn emit_products_changed(app: &AppHandle) {
 pub async fn emit_cashiers_changed(app: &AppHandle) {
     let _ = app.emit("cashiers:changed", ());
 }
+
+/// Emitted after a backup restore replaced the live database: every cached
+/// query in the frontend is stale and must be refetched.
+pub async fn emit_database_restored(app: &AppHandle) {
+    let _ = app.emit("database:restored", ());
+}

@@ -24,16 +24,18 @@ pub struct CreateReturnInputCmd {
 }
 
 #[tauri::command]
-pub async fn list_returns(pool: State<'_, DbPool>, input: ListReturnsInput, _auth: Option<String>) -> Result<Vec<Return>, AppError> {
-    let repo = ReturnRepository::new(pool.inner().clone());
+pub async fn list_returns(db: State<'_, crate::database::Db>, input: ListReturnsInput, _auth: Option<String>) -> Result<Vec<Return>, AppError> {
+    let pool = db.pool().await;
+    let repo = ReturnRepository::new(pool);
     repo.list(input.invoice_id).await
 }
 
 #[tauri::command]
-pub async fn create_return(app: AppHandle, pool: State<'_, DbPool>, input: CreateReturnInputCmd, auth_header: Option<String>) -> Result<Return, AppError> {
+pub async fn create_return(app: AppHandle, db: State<'_, crate::database::Db>, input: CreateReturnInputCmd, auth_header: Option<String>) -> Result<Return, AppError> {
     let auth_header_clone = auth_header.clone();
     require_cashier_or_admin(&app, auth_header).await?;
-    let repo = ReturnRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = ReturnRepository::new(pool);
     
     // Get current user for processed_by
     let claims = crate::auth::middleware::get_current_user(&app, auth_header_clone).await?;

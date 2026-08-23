@@ -44,27 +44,31 @@ pub struct MarkPaidInput {
 }
 
 #[tauri::command]
-pub async fn list_invoices(pool: State<'_, DbPool>, input: ListInvoicesInput, _auth: Option<String>) -> Result<Vec<Invoice>, AppError> {
-    let repo = InvoiceRepository::new(pool.inner().clone());
+pub async fn list_invoices(db: State<'_, crate::database::Db>, input: ListInvoicesInput, _auth: Option<String>) -> Result<Vec<Invoice>, AppError> {
+    let pool = db.pool().await;
+    let repo = InvoiceRepository::new(pool);
     repo.list(input.limit.unwrap_or(50), input.offset.unwrap_or(0)).await
 }
 
 #[tauri::command]
-pub async fn get_invoice(pool: State<'_, DbPool>, id: String, _auth: Option<String>) -> Result<Option<Invoice>, AppError> {
-    let repo = InvoiceRepository::new(pool.inner().clone());
+pub async fn get_invoice(db: State<'_, crate::database::Db>, id: String, _auth: Option<String>) -> Result<Option<Invoice>, AppError> {
+    let pool = db.pool().await;
+    let repo = InvoiceRepository::new(pool);
     repo.get(&id).await
 }
 
 #[tauri::command]
-pub async fn get_invoice_with_items(pool: State<'_, DbPool>, id: String, _auth: Option<String>) -> Result<Option<(Invoice, Vec<InvoiceItem>)>, AppError> {
-    let repo = InvoiceRepository::new(pool.inner().clone());
+pub async fn get_invoice_with_items(db: State<'_, crate::database::Db>, id: String, _auth: Option<String>) -> Result<Option<(Invoice, Vec<InvoiceItem>)>, AppError> {
+    let pool = db.pool().await;
+    let repo = InvoiceRepository::new(pool);
     repo.get_with_items(&id).await
 }
 
 #[tauri::command]
-pub async fn create_invoice(app: AppHandle, pool: State<'_, DbPool>, input: CreateInvoiceInputCmd, auth_header: Option<String>) -> Result<Invoice, AppError> {
+pub async fn create_invoice(app: AppHandle, db: State<'_, crate::database::Db>, input: CreateInvoiceInputCmd, auth_header: Option<String>) -> Result<Invoice, AppError> {
     require_cashier_or_admin(&app, auth_header).await?;
-    let repo = InvoiceRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = InvoiceRepository::new(pool);
     let create_input = crate::repositories::CreateInvoiceInput {
         customer_id: input.customer_id,
         customer_name: input.customer_name,
@@ -94,9 +98,10 @@ pub async fn create_invoice(app: AppHandle, pool: State<'_, DbPool>, input: Crea
 }
 
 #[tauri::command]
-pub async fn mark_invoice_paid(app: AppHandle, pool: State<'_, DbPool>, input: MarkPaidInput, auth_header: Option<String>) -> Result<Invoice, AppError> {
+pub async fn mark_invoice_paid(app: AppHandle, db: State<'_, crate::database::Db>, input: MarkPaidInput, auth_header: Option<String>) -> Result<Invoice, AppError> {
     require_cashier_or_admin(&app, auth_header).await?;
-    let repo = InvoiceRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = InvoiceRepository::new(pool);
     let invoice = repo.mark_paid(&input.id, input.amount, &input.payment_method).await?;
     crate::events::emit_invoices_changed(&app).await;
     if let Some(customer_id) = &invoice.customer_id {
@@ -106,7 +111,8 @@ pub async fn mark_invoice_paid(app: AppHandle, pool: State<'_, DbPool>, input: M
 }
 
 #[tauri::command]
-pub async fn get_next_invoice_no(pool: State<'_, DbPool>, _auth: Option<String>) -> Result<String, AppError> {
-    let repo = InvoiceRepository::new(pool.inner().clone());
+pub async fn get_next_invoice_no(db: State<'_, crate::database::Db>, _auth: Option<String>) -> Result<String, AppError> {
+    let pool = db.pool().await;
+    let repo = InvoiceRepository::new(pool);
     repo.get_next_invoice_no().await
 }

@@ -49,21 +49,24 @@ pub struct UpdateProductInput {
 }
 
 #[tauri::command]
-pub async fn list_products(pool: State<'_, DbPool>, _input: ListProductsInput, _auth: Option<String>) -> Result<Vec<Product>, AppError> {
-    let repo = ProductRepository::new(pool.inner().clone());
+pub async fn list_products(db: State<'_, crate::database::Db>, _input: ListProductsInput, _auth: Option<String>) -> Result<Vec<Product>, AppError> {
+    let pool = db.pool().await;
+    let repo = ProductRepository::new(pool);
     repo.list().await
 }
 
 #[tauri::command]
-pub async fn get_product(pool: State<'_, DbPool>, id: String, _auth: Option<String>) -> Result<Option<Product>, AppError> {
-    let repo = ProductRepository::new(pool.inner().clone());
+pub async fn get_product(db: State<'_, crate::database::Db>, id: String, _auth: Option<String>) -> Result<Option<Product>, AppError> {
+    let pool = db.pool().await;
+    let repo = ProductRepository::new(pool);
     repo.get(&id).await
 }
 
 #[tauri::command]
-pub async fn create_product(app: AppHandle, pool: State<'_, DbPool>, input: CreateProductInputCmd, auth_header: Option<String>) -> Result<Product, AppError> {
+pub async fn create_product(app: AppHandle, db: State<'_, crate::database::Db>, input: CreateProductInputCmd, auth_header: Option<String>) -> Result<Product, AppError> {
     require_cashier_or_admin(&app, auth_header).await?;
-    let repo = ProductRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = ProductRepository::new(pool);
     let create_input = crate::repositories::CreateProductInput {
         name: input.name,
         sku: input.sku,
@@ -86,9 +89,10 @@ pub async fn create_product(app: AppHandle, pool: State<'_, DbPool>, input: Crea
 }
 
 #[tauri::command]
-pub async fn update_product(app: AppHandle, pool: State<'_, DbPool>, input: UpdateProductInput, auth_header: Option<String>) -> Result<Product, AppError> {
+pub async fn update_product(app: AppHandle, db: State<'_, crate::database::Db>, input: UpdateProductInput, auth_header: Option<String>) -> Result<Product, AppError> {
     require_cashier_or_admin(&app, auth_header).await?;
-    let repo = ProductRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = ProductRepository::new(pool);
     let create_input = crate::repositories::CreateProductInput {
         name: input.name,
         sku: input.sku,
@@ -111,24 +115,27 @@ pub async fn update_product(app: AppHandle, pool: State<'_, DbPool>, input: Upda
 }
 
 #[tauri::command]
-pub async fn delete_product(app: AppHandle, pool: State<'_, DbPool>, id: String, auth_header: Option<String>) -> Result<(), AppError> {
+pub async fn delete_product(app: AppHandle, db: State<'_, crate::database::Db>, id: String, auth_header: Option<String>) -> Result<(), AppError> {
     require_cashier_or_admin(&app, auth_header).await?;
-    let repo = ProductRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = ProductRepository::new(pool);
     repo.delete(&id).await?;
     crate::events::emit_products_changed(&app).await;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn import_products(app: AppHandle, pool: State<'_, DbPool>, csv_content: String, auth_header: Option<String>) -> Result<crate::services::inventory::CsvImportResult, AppError> {
+pub async fn import_products(app: AppHandle, db: State<'_, crate::database::Db>, csv_content: String, auth_header: Option<String>) -> Result<crate::services::inventory::CsvImportResult, AppError> {
     require_cashier_or_admin(&app, auth_header).await?;
-    let result = crate::services::inventory::import_products_from_csv(pool.inner(), &csv_content).await?;
+    let pool = db.pool().await;
+    let result = crate::services::inventory::import_products_from_csv(&pool, &csv_content).await?;
     crate::events::emit_products_changed(&app).await;
     Ok(result)
 }
 
 #[tauri::command]
-pub async fn export_products(pool: State<'_, DbPool>, _auth: Option<String>) -> Result<Vec<Product>, AppError> {
-    let repo = ProductRepository::new(pool.inner().clone());
+pub async fn export_products(db: State<'_, crate::database::Db>, _auth: Option<String>) -> Result<Vec<Product>, AppError> {
+    let pool = db.pool().await;
+    let repo = ProductRepository::new(pool);
     repo.list().await
 }

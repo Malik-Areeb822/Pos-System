@@ -115,6 +115,7 @@ export interface ApiClient {
   reports: ReportsApi;
   cashiers: CashiersApi;
   auth: AuthApi;
+  backups: BackupsApi;
 }
 
 export interface ProductsApi {
@@ -176,6 +177,19 @@ export interface AuthApi {
   logout(): Promise<void>;
   me(): Promise<User | null>;
   checkAdminExists(): Promise<boolean>;
+}
+
+export interface BackupInfo {
+  path: string;
+  name: string;
+  size: number;
+  created: number;
+}
+
+export interface BackupsApi {
+  export(): Promise<string>;
+  import(backupPath: string): Promise<void>;
+  list(): Promise<BackupInfo[]>;
 }
 
 export interface Product {
@@ -443,5 +457,10 @@ export const api: ApiClient = {
       const res = await apiInvoke<{ exists: boolean }>("check_admin_exists", {}, { feature: "auth" });
       return res?.exists ?? false;
     },
+  },
+  backups: {
+    export: () => apiInvoke<string>("export_database", {}, { feature: "backups" }),
+    import: (backupPath) => apiInvoke("import_database", { backupPath }, { feature: "backups" }),
+    list: () => apiInvoke("list_backups", {}, { feature: "backups" }),
   },
 };

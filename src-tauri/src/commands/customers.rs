@@ -24,21 +24,24 @@ pub struct UpdateCustomerInput {
 }
 
 #[tauri::command]
-pub async fn list_customers(pool: State<'_, DbPool>, _auth: Option<String>) -> Result<Vec<Customer>, AppError> {
-    let repo = CustomerRepository::new(pool.inner().clone());
+pub async fn list_customers(db: State<'_, crate::database::Db>, _auth: Option<String>) -> Result<Vec<Customer>, AppError> {
+    let pool = db.pool().await;
+    let repo = CustomerRepository::new(pool);
     repo.list().await
 }
 
 #[tauri::command]
-pub async fn get_customer(pool: State<'_, DbPool>, id: String, _auth: Option<String>) -> Result<Option<Customer>, AppError> {
-    let repo = CustomerRepository::new(pool.inner().clone());
+pub async fn get_customer(db: State<'_, crate::database::Db>, id: String, _auth: Option<String>) -> Result<Option<Customer>, AppError> {
+    let pool = db.pool().await;
+    let repo = CustomerRepository::new(pool);
     repo.get(&id).await
 }
 
 #[tauri::command]
-pub async fn create_customer(app: AppHandle, pool: State<'_, DbPool>, input: CreateCustomerInputCmd, auth_header: Option<String>) -> Result<Customer, AppError> {
+pub async fn create_customer(app: AppHandle, db: State<'_, crate::database::Db>, input: CreateCustomerInputCmd, auth_header: Option<String>) -> Result<Customer, AppError> {
     require_cashier_or_admin(&app, auth_header).await?;
-    let repo = CustomerRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = CustomerRepository::new(pool);
     let create_input = crate::repositories::CreateCustomerInput {
         name: input.name,
         phone: input.phone,
@@ -51,9 +54,10 @@ pub async fn create_customer(app: AppHandle, pool: State<'_, DbPool>, input: Cre
 }
 
 #[tauri::command]
-pub async fn update_customer(app: AppHandle, pool: State<'_, DbPool>, input: UpdateCustomerInput, auth_header: Option<String>) -> Result<Customer, AppError> {
+pub async fn update_customer(app: AppHandle, db: State<'_, crate::database::Db>, input: UpdateCustomerInput, auth_header: Option<String>) -> Result<Customer, AppError> {
     require_cashier_or_admin(&app, auth_header).await?;
-    let repo = CustomerRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = CustomerRepository::new(pool);
     let create_input = crate::repositories::CreateCustomerInput {
         name: input.name,
         phone: input.phone,
@@ -66,9 +70,10 @@ pub async fn update_customer(app: AppHandle, pool: State<'_, DbPool>, input: Upd
 }
 
 #[tauri::command]
-pub async fn delete_customer(app: AppHandle, pool: State<'_, DbPool>, id: String, auth_header: Option<String>) -> Result<(), AppError> {
+pub async fn delete_customer(app: AppHandle, db: State<'_, crate::database::Db>, id: String, auth_header: Option<String>) -> Result<(), AppError> {
     require_cashier_or_admin(&app, auth_header).await?;
-    let repo = CustomerRepository::new(pool.inner().clone());
+    let pool = db.pool().await;
+    let repo = CustomerRepository::new(pool);
     repo.delete(&id).await?;
     crate::events::emit_customers_changed(&app).await;
     Ok(())
