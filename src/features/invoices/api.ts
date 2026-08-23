@@ -102,5 +102,11 @@ export function usePrintReceipt() {
   });
 }
 
+export function usePrintInvoicePdf() {
+  return useMutation({
+    mutationFn: (id: string) => api.invoices.printInvoicePdf(id),
+  });
+}
+
 export const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });

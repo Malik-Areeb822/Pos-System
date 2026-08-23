@@ -148,6 +148,7 @@ export interface InvoicesApi {
   create(input: CreateInvoiceInput): Promise<Invoice>;
   markPaid(input: MarkPaidInput): Promise<Invoice>;
   printReceipt(id: string): Promise<void>;
+  printInvoicePdf(id: string): Promise<string>;
 }
 
 export interface ReturnsApi {
@@ -408,6 +409,8 @@ export const api: ApiClient = {
     create: (input) => apiInvoke("create_invoice", { input }, { feature: "invoices" }),
     markPaid: (input) => apiInvoke("mark_invoice_paid", { input }, { feature: "invoices" }),
     printReceipt: (id) => apiInvoke("print_receipt", { invoiceId: id }, { feature: "invoices" }),
+    printInvoicePdf: (id) =>
+      apiInvoke<string>("print_invoice_pdf", { invoiceId: id }, { feature: "invoices" }),
   },
   returns: {
     list: () => apiInvoke("list_returns", { input: {} }, { feature: "returns" }),

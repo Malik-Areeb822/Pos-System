@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { BUSINESS } from "@/lib/business";
 import { useInvoiceRealtime } from "@/lib/tauri-events";
 import { currency } from "@/features/inventory/api";
-import { useInvoice, useMarkInvoicePaid, type Invoice, type InvoiceItem } from "@/features/invoices/api";
+import { useInvoice, useMarkInvoicePaid, usePrintInvoicePdf, type Invoice, type InvoiceItem } from "@/features/invoices/api";
 import { formatDate } from "@/features/invoices/api";
 
 export const Route = createFileRoute("/_authenticated/admin/invoices/$invoiceId")({
@@ -40,6 +40,7 @@ function InvoiceDetailPage() {
   }, [print, invoice]);
 
   const markPaid = useMarkInvoicePaid();
+  const printPdf = usePrintInvoicePdf();
   const [paymentAmount, setPaymentAmount] = useState("");
 
   const recordPayment = useMutation({
@@ -79,6 +80,20 @@ function InvoiceDetailPage() {
             <>
               <Button size="sm" variant="outline" asChild>
                 <Link to="/admin/invoices">Back</Link>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!invoice || printPdf.isPending}
+                onClick={() => {
+                  if (!invoice) return;
+                  printPdf.mutate(invoice.id, {
+                    onSuccess: (path) => toast.success(`A4 PDF saved to ${path}`),
+                    onError: (err: Error) => toast.error(err.message),
+                  });
+                }}
+              >
+                {printPdf.isPending ? "Generating…" : "Download A4 PDF"}
               </Button>
               <Button size="sm" variant="brass" onClick={() => window.print()}>
                 Print / Save PDF

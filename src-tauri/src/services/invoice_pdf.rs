@@ -8,36 +8,61 @@ use std::path::PathBuf;
 use std::fs::File;
 use std::io::Write;
 
+const FONT_REGULAR: &[u8] = include_bytes!("../assets/fonts/DejaVuSans.ttf");
+const FONT_BOLD: &[u8] = include_bytes!("../assets/fonts/DejaVuSans-Bold.ttf");
+
+/// Fonts are embedded at compile time so PDF generation never depends on the
+/// working directory or an external ./fonts folder.
+fn load_font_family() -> Result<fonts::FontFamily<fonts::FontData>, AppError> {
+    let regular = fonts::FontData::new(FONT_REGULAR.to_vec(), None)
+        .map_err(|e| AppError::Pdf(format!("Font load failed: {}", e)))?;
+    let bold = fonts::FontData::new(FONT_BOLD.to_vec(), None)
+        .map_err(|e| AppError::Pdf(format!("Font load failed: {}", e)))?;
+    // Italic slots reuse the same faces; invoice content only uses plain paragraphs.
+    let italic = regular.clone();
+    let bold_italic = bold.clone();
+    Ok(fonts::FontFamily { regular, bold, italic, bold_italic })
+}
+
 pub async fn generate_invoice_pdf(app: &AppHandle, pool: &DbPool, invoice_id: &str) -> Result<String, AppError> {
     let repo = InvoiceRepository::new(pool.clone());
     let invoice = repo.get_with_items(invoice_id).await?
         .ok_or(AppError::NotFound("Invoice not found".into()))?;
-    
+
     let (inv, items) = invoice;
-    
+
     // Create PDF document
-    let font_family = fonts::from_files("./fonts", "DejaVuSans", None)
-        .map_err(|e| AppError::Pdf(format!("Font load failed: {}", e)))?;
-    
+    let font_family = load_font_family()?;
+
     let mut doc = Document::new(font_family);
     doc.set_title(&format!("Invoice {}", inv.invoice_no));
-    
+
     let mut decorator = genpdf::SimplePageDecorator::new();
     decorator.set_margins(20);
     doc.set_page_decorator(decorator);
-    
+
     // Build content directly on document
     build_invoice_content(&mut doc, &inv, &items);
-    
+
     // Render to file
     let config = crate::config::CONFIG.clone();
-    let output_path = config.app_data_dir.join(format!("invoice_{}.pdf", inv.invoice_no));
-    
+    std::fs::create_dir_all(&config.app_data_dir)?;
+    let output_path = config.app_data_dir.join(format!("invoice_{}.pdf", sanitize_filename(&inv.invoice_no)));
+
     let mut file = File::create(&output_path)?;
     doc.render(&mut file)
         .map_err(|e| AppError::Pdf(format!("PDF render failed: {}", e)))?;
-    
+
     Ok(output_path.to_string_lossy().to_string())
+}
+
+fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ => c,
+        })
+        .collect()
 }
 
 fn build_invoice_content(doc: &mut Document, inv: &crate::repositories::invoices::Invoice, items: &[crate::repositories::invoices::InvoiceItem]) {
@@ -91,8 +116,8 @@ fn build_invoice_content(doc: &mut Document, inv: &crate::repositories::invoices
     }
 }
 
-fn format_price(paise: i64) -> String {
-    let rupees = paise / 100;
-    let paise_rem = paise % 100;
-    format!("PKR {}.{:02}", rupees, paise_rem)
+/// Amounts are stored and displayed as whole rupees everywhere in the app
+/// (see HANDOFF.md locked decisions) — no paise conversion here.
+fn format_price(rupees: i64) -> String {
+    format!("PKR {}", rupees)
 }

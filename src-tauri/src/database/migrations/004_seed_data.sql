@@ -1,6 +1,6 @@
 -- 004_seed_data.sql
 -- 20 sample products across 4 categories
--- Prices in PKR paise (integer): PKR * 100
+-- Prices in PKR whole rupees (integer)
 
 -- MARBLE (5 products)
 INSERT OR IGNORE INTO products (id, name, sku, category, description, color, size, finish, unit, price, pieces_per_carton, stock_qty, low_stock_threshold, image_url, is_published) VALUES
