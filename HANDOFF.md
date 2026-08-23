@@ -69,22 +69,41 @@ walk-in or named customer alike. Customer `outstanding_balance` is a mirror main
 | `cargo tauri build` MSI/NSIS with self-signed cert ("AUZ Tech") | Pending |
 | Staff quick-start documentation | Pending |
 
+### Manual regression matrix after CLEANUP_PLAN execution (GUI required)
+
+All phases verified by `cargo check --all-targets` (0 errors), `cargo clippy`, `npm run build`
+and `npx tsc --noEmit` (no new type errors in touched files). The following need a human at the
+running app:
+
+- [ ] Login → dashboard → POS smoke test; dashboard numbers identical to pre-cleanup
+- [ ] PDF invoice: generate from a real invoice via "Download A4 PDF"; totals/paid/balance match UI exactly
+- [ ] Cashier reset-password: admin resets → new password works, old rejected
+- [ ] Backup: export → import roundtrip preserves data; corrupt/garbage file rejected cleanly
+- [ ] JWT: fresh run creates `%PROGRAMDATA%\CityTiles\jwt.key`; second run reuses it; env override wins
+- [ ] Reports page renders unchanged numbers
+
 ## ⚠️ Known Issues / Out-of-Scope Leftovers
 
-1. **Dashboard/reports response shapes**: Rust returns `DashboardStats{total_sales_today,...}`
-   and a sales-report **array of rows**; TS interfaces still expect `total_revenue` /
-   summary-object shapes. IPC works but some dashboard/report numbers may render wrong until
-   these are aligned.
-2. **Public website routes still Supabase-backed**: `lib/catalog.ts`, `InquiryForm.tsx`,
-   `hooks/useInvoiceRealtime.ts` (dead) — broken offline; separate cleanup needed.
-3. **PDF fonts**: `services/invoice_pdf.rs` loads fonts from CWD-relative `./fonts` which does
-   not exist anywhere → PDF generation will fail until fonts are bundled and path resolved.
-4. **Backup UI missing**: export/import/list_backups commands registered but no frontend
-   callers (HANDOFF previously claimed otherwise). Also import copies over a live pool —
-   harden before shipping backup feature.
-5. **Cashier reset-password**: backend ready, no UI entry point.
-6. **JWT secret**: hardcoded fallback `"citytiles-pos-secret-change-in-production"` ships in
-   binary (config.rs). Acceptable for offline single-shop deployment; rotate before wider use.
+Statuses updated after CLEANUP_PLAN execution (2026-08-23):
+
+1. ~~**Dashboard/reports response shapes**~~ — ✅ FIXED (cleanup Phase 1): TS types now mirror Rust
+   wire shapes exactly (`DashboardStats`, `SalesReportItem[]`, `InventoryReportItem[]`); UI keeps
+   computing numbers client-side; semantic divergences documented below.
+2. ~~**Public website routes Supabase-backed**~~ — ✅ FIXED (cleanup Phase 2): `/website/*` routes,
+   SiteShell/InquiryForm/ProductCard and `src/integrations/{supabase,lovable}` deleted;
+   `@supabase/supabase-js` + `@lovable.dev/cloud-auth-js` removed from dependencies.
+3. ~~**PDF fonts**~~ — ✅ FIXED (cleanup Phase 3): DejaVuSans Regular+Bold embedded via
+   `include_bytes!`; money formatter fixed to whole rupees (was ÷100 = 100× too small totals);
+   output dir created on demand; filename sanitized; "Download A4 PDF" button wired on invoice detail.
+4. ~~**Backup UI missing / blind import copy**~~ — ✅ FIXED (cleanup Phase 5): swappable pool holder,
+   VACUUM INTO consistent export snapshots, validate-first restore with integrity_check +
+   required-tables gate + auto pre-restore snapshot; admin-only Settings page with export/list/import
+   (native file dialog, double-confirm).
+5. ~~**Cashier reset-password no UI entry point**~~ — ✅ FIXED (cleanup Phase 4): Reset Password action
+   for approved cashiers with dialog + confirm; hook arity bug fixed; `emit_cashiers_changed` wired.
+6. ~~**JWT hardcoded fallback secret**~~ — ✅ FIXED (cleanup Phase 6): env `JWT_SECRET` → persisted
+   `%PROGRAMDATA%\CityTiles\jwt.key` (random per install, generated first boot) → ephemeral random.
+   Existing sessions log out once when the updated binary ships.
 
 ### Semantic Divergences — documented, intentionally NOT fixed (2026-08-23 type-truth cleanup)
 
@@ -108,6 +127,10 @@ remain unused by the UI; these semantic gaps are recorded so nobody "fixes" them
 | Code signing | Self-signed, publisher "AUZ Tech" |
 | Seed products | 20 examples ship via migration 004 |
 | Printing | ESC/POS raw USB (rusb) + spooler fallback; genpdf A4 invoices |
+| Public `/website/*` routes | **Deleted from app** (2026-08-23): routes, SiteShell/InquiryForm, Supabase dep removed |
+| JWT secret | **Per-install random key file** `%PROGRAMDATA%\CityTiles\jwt.key`; env var wins; hardcoded fallback removed (2026-08-23) |
+| Money unit | **Whole rupees are canonical** everywhere incl. PDF invoices — no paise conversion anywhere (2026-08-23) |
+| Report types | **Type-truth alignment done** — TS mirrors Rust payloads; UI computes client-side (2026-08-23) |
 
 ---
 

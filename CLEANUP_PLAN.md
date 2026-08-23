@@ -2,7 +2,10 @@
 
 > **Goal**: Resolve all known issues from `HANDOFF.md` (§ Known Issues / Out-of-Scope Leftovers) plus issues discovered during research, without breaking verified POS behavior.
 > **Constraint**: Zero functional changes to core POS behavior.
-> **Status**: 📝 Plan only — implementation NOT started.
+> **Status**: ✅ IMPLEMENTED (Phases 0–6 committed 2026-08-23, one commit per phase).
+> Automated gates pass (`cargo check --all-targets`, `cargo clippy`, `npm run build`, `tsc --noEmit`
+> with zero new type errors). Phase 7's manual GUI regression matrix is tracked in `HANDOFF.md`
+> ("Manual regression matrix after CLEANUP_PLAN execution") and remains for a human at the running app.
 > **Date**: 2026-08-23
 > **Companion docs**: `HANDOFF.md` (current state), `FIX_PLAN.md`, `MIGRATION_PLAN.md`
 
