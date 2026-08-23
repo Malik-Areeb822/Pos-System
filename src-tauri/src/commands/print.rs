@@ -1,7 +1,6 @@
 // src-tauri/src/commands/print.rs
 use tauri::{State, AppHandle};
 use crate::auth::middleware::require_cashier_or_admin;
-use crate::DbPool;
 use crate::error::AppError;
 
 #[tauri::command]

@@ -61,6 +61,7 @@ genpdf = "0.2"
 #[cfg(target_os = "windows")]
 windows = { version = "0.58", features = [
     "Win32_Graphics_Printing",
+    "Win32_Graphics_Gdi",
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
 ] }

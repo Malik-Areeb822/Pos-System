@@ -1,32 +1,45 @@
 // src-tauri/src/services/print.rs
+use rusb::UsbContext as _;
 use tauri::AppHandle;
 use crate::DbPool;
 use crate::error::AppError;
 use crate::repositories::InvoiceRepository;
-use std::process::Command;
-use rusb::UsbContext;
 use std::time::Duration;
 
 const ESC: u8 = 0x1B;
 const GS: u8 = 0x1D;
 
-pub async fn print_receipt(app: &AppHandle, pool: &DbPool, invoice_id: &str) -> Result<(), AppError> {
+/// Characters per line on an 80mm roll at default font (Font A).
+/// 58mm printers typically fit 32 — adjust here if ever needed.
+const RECEIPT_WIDTH: usize = 48;
+
+pub async fn print_receipt(_app: &AppHandle, pool: &DbPool, invoice_id: &str) -> Result<(), AppError> {
     let repo = InvoiceRepository::new(pool.clone());
     let invoice = repo.get_with_items(invoice_id).await?
         .ok_or(AppError::NotFound("Invoice not found".into()))?;
-    
+
     let (inv, items) = invoice;
-    
-    // Try ESC/POS via USB first
-    if let Err(e) = print_escpos_usb(&inv, &items).await {
-        tracing::warn!("ESC/POS USB print failed, falling back to spooler: {}", e);
-        print_via_spooler(&inv, &items).await?;
+
+    // One ESC/POS byte stream serves both paths.
+    let data = build_escpos_receipt(&inv, &items);
+
+    // Path 1: direct USB ESC/POS — fastest, works even without a driver.
+    if let Err(e) = print_escpos_usb(&data).await {
+        tracing::warn!(
+            "ESC/POS USB print unavailable ({}); falling back to Windows spooler (RAW)",
+            e
+        );
+    } else {
+        return Ok(());
     }
-    
-    Ok(())
+
+    // Path 2: Windows spooler with RAW datatype — the printer still receives
+    // our ESC/POS stream, so formatting and auto-cut behave exactly like path 1
+    // and no page-size feed is triggered. (Replaces the old notepad /p hack.)
+    print_via_spooler(&inv, &items, &data).await
 }
 
-async fn print_escpos_usb(inv: &crate::repositories::invoices::Invoice, items: &[crate::repositories::invoices::InvoiceItem]) -> Result<(), AppError> {
+async fn print_escpos_usb(data: &[u8]) -> Result<(), AppError> {
     use rusb::{Context, Direction, TransferType};
 
     // Accept known thermal-printer VID/PIDs (see is_known_printer below),
@@ -34,7 +47,6 @@ async fn print_escpos_usb(inv: &crate::repositories::invoices::Invoice, items: &
     // covers budget 80mm/58mm models not on the list.
     let ctx = Context::new()?;
     let devices = ctx.devices()?;
-    let data = build_escpos_receipt(inv, items);
 
     for device in devices.iter() {
         let desc = match device.device_descriptor() {
@@ -47,7 +59,7 @@ async fn print_escpos_usb(inv: &crate::repositories::invoices::Invoice, items: &
             continue;
         }
 
-        let mut handle = match device.open() {
+        let handle = match device.open() {
             Ok(h) => h,
             Err(_) => continue,
         };
@@ -79,7 +91,7 @@ async fn print_escpos_usb(inv: &crate::repositories::invoices::Invoice, items: &
             continue;
         }
 
-        match handle.write_bulk(endpoint_addr, &data, Duration::from_secs(5)) {
+        match handle.write_bulk(endpoint_addr, data, Duration::from_secs(5)) {
             Ok(_) => {
                 let _ = handle.release_interface(interface_num);
                 return Ok(());
@@ -99,137 +111,264 @@ async fn print_escpos_usb(inv: &crate::repositories::invoices::Invoice, items: &
     Err(AppError::Usb(rusb::Error::NotFound))
 }
 
-async fn print_via_spooler(inv: &crate::repositories::invoices::Invoice, items: &[crate::repositories::invoices::InvoiceItem]) -> Result<(), AppError> {
-    let content = build_text_receipt(inv, items);
-    
-    #[cfg(target_os = "windows")]
-    {
-        // Write to temp file and print via notepad /p
-        let temp_path = std::env::temp_dir().join(format!("receipt_{}.txt", inv.id));
-        tokio::fs::write(&temp_path, &content).await?;
-        
-        Command::new("notepad")
-            .args(["/p", temp_path.to_str().unwrap()])
-            .spawn()?;
+/// Send raw bytes to the default Windows printer using the Print Spooler API
+/// with the RAW datatype. RAW bypasses driver pagination entirely — the roll
+/// only advances for content actually sent.
+#[cfg(target_os = "windows")]
+async fn print_via_spooler(
+    _inv: &crate::repositories::invoices::Invoice,
+    _items: &[crate::repositories::invoices::InvoiceItem],
+    data: &[u8],
+) -> Result<(), AppError> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::ffi::OsStr;
+    use windows::core::{PCWSTR, PWSTR};
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Graphics::Printing::{
+        ClosePrinter, EndDocPrinter, GetDefaultPrinterW, OpenPrinterW, StartDocPrinterW,
+        WritePrinter, DOC_INFO_1W,
+    };
+
+    fn wide(s: &str) -> Vec<u16> {
+        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
     }
-    
-    #[cfg(target_os = "macos")]
-    {
-        let temp_path = std::env::temp_dir().join(format!("receipt_{}.txt", inv.id));
-        tokio::fs::write(&temp_path, &content).await?;
-        
-        Command::new("lpr")
-            .arg(temp_path.to_str().unwrap())
-            .spawn()?;
+
+    // 1. Resolve the default printer name.
+    let mut len: u32 = 0;
+    // First call with null buffer fails with INSUFFICIENT_BUFFER and sets len.
+    let _ = unsafe { GetDefaultPrinterW(PWSTR::null(), &mut len) };
+    if len == 0 {
+        return Err(AppError::Internal(
+            "No default printer installed — set your 80mm printer as the Windows default printer"
+                .into(),
+        ));
     }
-    
-    #[cfg(target_os = "linux")]
-    {
-        let temp_path = std::env::temp_dir().join(format!("receipt_{}.txt", inv.id));
-        tokio::fs::write(&temp_path, &content).await?;
-        
-        Command::new("lp")
-            .arg(temp_path.to_str().unwrap())
-            .spawn()?;
+    let mut name_buf = vec![0u16; len as usize];
+    if !unsafe { GetDefaultPrinterW(PWSTR(name_buf.as_mut_ptr()), &mut len) }.as_bool() {
+        return Err(AppError::Internal("GetDefaultPrinter call failed".into()));
     }
-    
+    let name_end = name_buf.iter().position(|&c| c == 0).unwrap_or(len as usize);
+    let printer_name = String::from_utf16_lossy(&name_buf[..name_end]);
+
+    // 2. Open a handle to it.
+    let mut handle = HANDLE::default();
+    unsafe { OpenPrinterW(PCWSTR(name_buf.as_ptr()), &mut handle, None) }
+        .map_err(|e| AppError::Internal(format!("Could not open printer '{}': {}", printer_name, e)))?;
+
+    // 3. Start a RAW job.
+    let mut doc_name = wide("CityTiles Receipt");
+    let mut datatype = wide("RAW");
+    let doc = DOC_INFO_1W {
+        pDocName: PWSTR(doc_name.as_mut_ptr()),
+        pOutputFile: PWSTR::null(),
+        pDatatype: PWSTR(datatype.as_mut_ptr()),
+    };
+    let job = unsafe { StartDocPrinterW(handle, 1, &doc) };
+    if job == 0 {
+        let _ = unsafe { ClosePrinter(handle) };
+        return Err(AppError::Internal(format!(
+            "Spooler rejected print job for '{}'",
+            printer_name
+        )));
+    }
+
+    // 4. Stream the ESC/POS bytes.
+    let mut written: u32 = 0;
+    let ok = unsafe {
+        WritePrinter(handle, data.as_ptr().cast(), data.len() as u32, &mut written)
+    }
+    .as_bool()
+        && written as usize == data.len();
+    let ended = unsafe { EndDocPrinter(handle) }.as_bool();
+    let _ = unsafe { ClosePrinter(handle) };
+
+    if !ok {
+        return Err(AppError::Internal(
+            "Print spooling failed or the job was truncated".into(),
+        ));
+    }
+    if !ended {
+        return Err(AppError::Internal("Failed to finish print job".into()));
+    }
     Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn print_via_spooler(
+    inv: &crate::repositories::invoices::Invoice,
+    items: &[crate::repositories::invoices::InvoiceItem],
+    _data: &[u8],
+) -> Result<(), AppError> {
+    use std::process::Command;
+
+    let temp_path = std::env::temp_dir().join(format!("receipt_{}.txt", inv.id));
+    tokio::fs::write(&temp_path, build_text_receipt(inv, items)).await?;
+
+    #[cfg(target_os = "macos")]
+    Command::new("lpr").arg(temp_path.to_str().unwrap()).spawn()?;
+    #[cfg(all(unix, not(target_os = "macos")))]
+    Command::new("lp").arg(temp_path.to_str().unwrap()).spawn()?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// ESC/POS receipt builder
+// ---------------------------------------------------------------------------
+
+/// Right-aligned two-column row; wraps the left column when it doesn't fit.
+fn two_col(left: &str, right: &str) -> String {
+    let left_chars: Vec<char> = left.chars().collect();
+    let right_len = right.chars().count();
+    let max_left = RECEIPT_WIDTH.saturating_sub(right_len + 1);
+
+    let mut out = String::new();
+    if left_chars.len() <= max_left {
+        out.push_str(left);
+        for _ in 0..(RECEIPT_WIDTH - left_chars.len() - right_len) {
+            out.push(' ');
+        }
+        out.push_str(right);
+        out.push('\n');
+    } else {
+        // Wrap the left column; the amount rides on the final chunk.
+        let mut start = 0;
+        while start < left_chars.len() {
+            let end = (start + max_left).min(left_chars.len());
+            let chunk: String = left_chars[start..end].iter().collect();
+            if end < left_chars.len() {
+                out.push_str(&chunk);
+                out.push('\n');
+            } else {
+                let pad = RECEIPT_WIDTH - chunk.chars().count() - right_len;
+                out.push_str(&chunk);
+                for _ in 0..pad {
+                    out.push(' ');
+                }
+                out.push_str(right);
+                out.push('\n');
+            }
+            start = end;
+        }
+    }
+    out
+}
+
+fn rule(c: char) -> String {
+    let mut s = c.to_string().repeat(RECEIPT_WIDTH);
+    s.push('\n');
+    s
 }
 
 fn build_escpos_receipt(inv: &crate::repositories::invoices::Invoice, items: &[crate::repositories::invoices::InvoiceItem]) -> Vec<u8> {
     let mut data = Vec::new();
-    
-    // Initialize
+
+    // Initialize + double-height centered store banner.
     data.extend_from_slice(&[ESC, b'@']);
-    
-    // Center align
-    data.extend_from_slice(&[ESC, b'a', 1]);
-    
-    // Header
+    data.extend_from_slice(&[ESC, b'a', 1]); // center
+    data.extend_from_slice(&[GS, b'!', 0x11]); // double width + height
     data.extend_from_slice(b"CITY TILES POS\n");
-    data.extend_from_slice(b"================\n\n");
-    
-    // Invoice info
-    data.extend_from_slice(&[ESC, b'a', 0]); // Left align
-    data.extend_from_slice(format!("Invoice: {}\n", inv.invoice_no).as_bytes());
-    data.extend_from_slice(format!("Date: {}\n", inv.created_at.split('T').next().unwrap_or("")).as_bytes());
-    data.extend_from_slice(format!("Customer: {}\n", inv.customer_name).as_bytes());
-    data.extend_from_slice(b"----------------\n");
-    
-    // Items
+    data.extend_from_slice(&[GS, b'!', 0x00]); // back to normal size
+    data.extend_from_slice(b"\n");
+
+    // Invoice meta.
+    data.extend_from_slice(&[ESC, b'a', 0]); // left
+    data.extend_from_slice(two_col("Invoice", &inv.invoice_no).as_bytes());
+    data.extend_from_slice(
+        two_col(
+            "Date",
+            inv.created_at.split('T').next().unwrap_or(""),
+        )
+        .as_bytes(),
+    );
+    data.extend_from_slice(two_col("Customer", &inv.customer_name).as_bytes());
+    data.extend_from_slice(rule('-').as_bytes());
+
+    // Items: "qty x unit name" left, line total right; rate underneath.
     for item in items {
-        data.extend_from_slice(format!("{} x {} {}\n", item.quantity, item.unit, item.product_name).as_bytes());
-        data.extend_from_slice(format!("  {} @ {} = {}\n", item.unit, format_price(item.unit_price), format_price(item.line_total)).as_bytes());
+        data.extend_from_slice(
+            two_col(
+                &format!("{} x {} {}", item.quantity, item.unit, item.product_name),
+                &format_price(item.line_total),
+            )
+            .as_bytes(),
+        );
+        data.extend_from_slice(
+            format!("      @ {} / {}\n", format_price(item.unit_price), item.unit).as_bytes(),
+        );
     }
-    
-    data.extend_from_slice(b"----------------\n");
-    
-    // Totals
-    data.extend_from_slice(format!("Subtotal: {}\n", format_price(inv.subtotal)).as_bytes());
+    data.extend_from_slice(rule('-').as_bytes());
+
+    // Totals — TOTAL row emphasised with bold.
+    data.extend_from_slice(two_col("Subtotal", &format_price(inv.subtotal)).as_bytes());
     if inv.discount > 0 {
-        data.extend_from_slice(format!("Discount: -{}\n", format_price(inv.discount)).as_bytes());
+        data.extend_from_slice(two_col("Discount", &format!("-{}", format_price(inv.discount))).as_bytes());
     }
-    data.extend_from_slice(format!("TOTAL: {}\n", format_price(inv.total)).as_bytes());
-    data.extend_from_slice(format!("Paid: {}\n", format_price(inv.amount_paid)).as_bytes());
+    data.extend_from_slice(rule('-').as_bytes());
+    data.extend_from_slice(&[ESC, b'E', 1]); // bold on
+    data.extend_from_slice(two_col("TOTAL", &format_price(inv.total)).as_bytes());
+    data.extend_from_slice(&[ESC, b'E', 0]); // bold off
+    data.extend_from_slice(rule('=').as_bytes());
+    data.extend_from_slice(two_col("Paid", &format_price(inv.amount_paid)).as_bytes());
     if inv.amount_paid < inv.total {
-        data.extend_from_slice(format!("Balance: {}\n", format_price(inv.total - inv.amount_paid)).as_bytes());
+        data.extend_from_slice(
+            two_col("Balance", &format_price(inv.total - inv.amount_paid)).as_bytes(),
+        );
     }
     data.extend_from_slice(format!("Method: {}\n", inv.payment_method).as_bytes());
-    
+
     if let Some(notes) = &inv.notes {
         if !notes.is_empty() {
             data.extend_from_slice(b"\nNotes:\n");
-            data.extend_from_slice(format!("{}\n", notes).as_bytes());
+            data.extend_from_slice(notes.as_bytes());
+            data.push(b'\n');
         }
     }
-    
-    data.extend_from_slice(b"\n================\n");
-    data.extend_from_slice(b"Thank you!\n\n\n");
-    
-    // Cut paper
+
+    // Short trailing feed + auto cut (no page-sized waste — the printer only
+    // feeds what we ask for).
+    data.extend_from_slice(b"\n\nThank you!\n\n\n");
     data.extend_from_slice(&[GS, b'V', 1]);
-    
+
     data
 }
 
+/// Plain-text twin used by the non-Windows spooler fallback only.
+#[cfg(not(target_os = "windows"))]
 fn build_text_receipt(inv: &crate::repositories::invoices::Invoice, items: &[crate::repositories::invoices::InvoiceItem]) -> String {
-    let mut output = String::new();
-    
-    output.push_str("CITY TILES POS\n");
-    output.push_str("================\n\n");
-    output.push_str(&format!("Invoice: {}\n", inv.invoice_no));
-    output.push_str(&format!("Date: {}\n", inv.created_at.split('T').next().unwrap_or("")));
-    output.push_str(&format!("Customer: {}\n", inv.customer_name));
-    output.push_str("----------------\n");
-    
+    let mut out = String::new();
+    out.push_str("CITY TILES POS\n\n");
+    out.push_str(&two_col("Invoice", &inv.invoice_no));
+    out.push_str(&two_col("Date", inv.created_at.split('T').next().unwrap_or("")));
+    out.push_str(&two_col("Customer", &inv.customer_name));
+    out.push_str(&rule('-'));
     for item in items {
-        output.push_str(&format!("{} x {} {}\n", item.quantity, item.unit, item.product_name));
-        output.push_str(&format!("  {} @ {} = {}\n", item.unit, format_price(item.unit_price), format_price(item.line_total)));
+        out.push_str(&two_col(
+            &format!("{} x {} {}", item.quantity, item.unit, item.product_name),
+            &format_price(item.line_total),
+        ));
+        out.push_str(&format!("      @ {} / {}\n", format_price(item.unit_price), item.unit));
     }
-    
-    output.push_str("----------------\n");
-    output.push_str(&format!("Subtotal: {}\n", format_price(inv.subtotal)));
+    out.push_str(&rule('-'));
+    out.push_str(&two_col("Subtotal", &format_price(inv.subtotal)));
     if inv.discount > 0 {
-        output.push_str(&format!("Discount: -{}\n", format_price(inv.discount)));
+        out.push_str(&two_col("Discount", &format!("-{}", format_price(inv.discount))));
     }
-    output.push_str(&format!("TOTAL: {}\n", format_price(inv.total)));
-    output.push_str(&format!("Paid: {}\n", format_price(inv.amount_paid)));
+    out.push_str(&two_col("TOTAL", &format_price(inv.total)));
+    out.push_str(&rule('='));
+    out.push_str(&two_col("Paid", &format_price(inv.amount_paid)));
     if inv.amount_paid < inv.total {
-        output.push_str(&format!("Balance: {}\n", format_price(inv.total - inv.amount_paid)));
+        out.push_str(&two_col("Balance", &format_price(inv.total - inv.amount_paid)));
     }
-    output.push_str(&format!("Method: {}\n", inv.payment_method));
-    
+    out.push_str(&format!("Method: {}\n", inv.payment_method));
     if let Some(notes) = &inv.notes {
         if !notes.is_empty() {
-            output.push_str("\nNotes:\n");
-            output.push_str(&format!("{}\n", notes));
+            out.push_str("\nNotes:\n");
+            out.push_str(notes);
+            out.push('\n');
         }
     }
-    
-    output.push_str("\n================\n");
-    output.push_str("Thank you!\n\n\n");
-    
-    output
+    out.push_str("\nThank you!\n");
+    out
 }
 
 /// Amounts are stored and displayed as whole rupees everywhere in the app
@@ -240,11 +379,11 @@ fn format_price(rupees: i64) -> String {
 
 pub async fn list_usb_printers() -> Result<Vec<crate::commands::print::UsbPrinterInfo>, AppError> {
     use rusb::Context;
-    
+
     let ctx = Context::new()?;
     let devices = ctx.devices()?;
     let mut printers = Vec::new();
-    
+
     for device in devices.iter() {
         let desc = device.device_descriptor()?;
         // Filter for printer class (0x07) or known VID/PIDs
@@ -256,7 +395,7 @@ pub async fn list_usb_printers() -> Result<Vec<crate::commands::print::UsbPrinte
                 product: None,
                 serial_number: None,
             };
-            
+
             // Try to get strings
             if let Ok(handle) = device.open() {
                 let timeout = Duration::from_secs(5);
@@ -274,11 +413,11 @@ pub async fn list_usb_printers() -> Result<Vec<crate::commands::print::UsbPrinte
                     }
                 }
             }
-            
+
             printers.push(info);
         }
     }
-    
+
     Ok(printers)
 }
 
