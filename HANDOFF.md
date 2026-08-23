@@ -107,6 +107,15 @@ Statuses updated after CLEANUP_PLAN execution (2026-08-23):
    `%PROGRAMDATA%\CityTiles\jwt.key` (random per install, generated first boot) → ephemeral random.
    Existing sessions log out once when the updated binary ships.
 
+### ⚠️ Migration hygiene (learned 2026-08-23)
+
+**Never edit files under `src-tauri/src/database/migrations/` once they have shipped or run on any
+machine.** sqlx stores a content checksum per migration in `_sqlx_migrations`; even comment-only
+edits change the checksum and crash every existing install at startup ("migration N was previously
+applied but has been modified"), including after backup restores. Schema corrections go in a NEW
+numbered migration file. The whole-rupee money-unit truth lives in code comments + Locked Decisions,
+not in migration comments.
+
 ### Semantic Divergences — documented, intentionally NOT fixed (2026-08-23 type-truth cleanup)
 
 TS types now mirror Rust payloads exactly (`DashboardStats`, `SalesReportItem[]`, `InventoryReportItem[]`).

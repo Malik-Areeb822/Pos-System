@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS products (
     size TEXT,
     finish TEXT,
     unit TEXT NOT NULL DEFAULT 'pcs',
-    price INTEGER NOT NULL DEFAULT 0, -- PKR whole rupees (integer)
+    price INTEGER NOT NULL DEFAULT 0, -- PKR in paise (integer)
     pieces_per_carton INTEGER,
     stock_qty INTEGER NOT NULL DEFAULT 0,
     low_stock_threshold INTEGER NOT NULL DEFAULT 5,
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS customers (
     phone TEXT,
     email TEXT,
     address TEXT,
-    outstanding_balance INTEGER NOT NULL DEFAULT 0, -- PKR whole rupees
+    outstanding_balance INTEGER NOT NULL DEFAULT 0, -- PKR in paise
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

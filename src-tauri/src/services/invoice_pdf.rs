@@ -4,9 +4,7 @@ use crate::DbPool;
 use crate::error::AppError;
 use crate::repositories::InvoiceRepository;
 use genpdf::{Document, elements, fonts};
-use std::path::PathBuf;
 use std::fs::File;
-use std::io::Write;
 
 const FONT_REGULAR: &[u8] = include_bytes!("../assets/fonts/DejaVuSans.ttf");
 const FONT_BOLD: &[u8] = include_bytes!("../assets/fonts/DejaVuSans-Bold.ttf");
@@ -24,7 +22,7 @@ fn load_font_family() -> Result<fonts::FontFamily<fonts::FontData>, AppError> {
     Ok(fonts::FontFamily { regular, bold, italic, bold_italic })
 }
 
-pub async fn generate_invoice_pdf(app: &AppHandle, pool: &DbPool, invoice_id: &str) -> Result<String, AppError> {
+pub async fn generate_invoice_pdf(_app: &AppHandle, pool: &DbPool, invoice_id: &str) -> Result<String, AppError> {
     let repo = InvoiceRepository::new(pool.clone());
     let invoice = repo.get_with_items(invoice_id).await?
         .ok_or(AppError::NotFound("Invoice not found".into()))?;
