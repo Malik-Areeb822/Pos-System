@@ -51,6 +51,22 @@ walk-in or named customer alike. Customer `outstanding_balance` is a mirror main
 
 ---
 
+## 🔧 Session 2026-08-23 (continued): Cleanup Execution + Receipt Printing
+
+CLEANUP_PLAN.md executed end-to-end — one commit per phase (`99c96e6`…`41f78e0`), then three
+follow-up fixes from live testing. Automated gates green throughout: `cargo check --all-targets`,
+`cargo clippy`, `npm run build`, `npx tsc --noEmit` (no new type errors in touched files).
+Git repo initialized locally this session (no remote yet as of last update).
+
+| Fix | Commit(s) | Notes |
+|-----|-----------|-------|
+| Cleanup Phases 0–7 | `99c96e6`→`41f78e0` | Type truth, Supabase excision, PDF pipeline, cashier reset UI, backup hardening + Settings page, per-install JWT, docs refresh |
+| Receipt money bug | `a4219cf` | `print.rs` had its own `format_price` still ÷100 — receipts printed totals 100× too small; also widened USB detection (any printer-class 0x07 device) and discovered real bulk OUT endpoint |
+| Startup crash: migration checksum | `3d401f8`, `0991fe1` | Editing applied migration files (even comments) changes their sqlx checksums → every existing DB fails boot validation. Reverted file bytes; **`.gitattributes` now pins `migrations/*.sql` to LF** so clones/checkouts can never reintroduce it. Diagnosed by hashing on-disk/git-blob/CRLF variants against `_sqlx_migrations.checksum` |
+| Receipt printing overhaul | `1c99a75` | 80mm printer is installed as a Windows spooler printer → old code fell back to `notepad /p`: squished text + full-page paper feed. Now: **Print Spooler API with RAW datatype** to the default printer (printer receives ESC/POS directly → correct width, auto-cut, zero page-feed waste). Layout rebuilt: 48-char two-column rows, right-aligned amounts, wrapped names, double-height banner, bold TOTAL. Fallback order: direct USB → spooler RAW |
+
+**Receipt printing decision (owner-approved)**: target the Windows *default* printer; no printer-picker UI. Keep `PKR ` prefix on receipt amounts.
+
 ## ✅ Current Working State (dev machine)
 
 - `cargo tauri dev` boots cleanly → first-run creates `%PROGRAMDATA%\CityTiles\citytiles.db`
@@ -65,7 +81,7 @@ walk-in or named customer alike. Customer `outstanding_balance` is a mirror main
 |------|--------|
 | Verify autostart registry entry + single-instance focus on second launch | Pending test |
 | Clean Windows machine install test | Pending |
-| Thermal printer (ESC/POS) test at office | Deferred — printer not yet purchased/on-site |
+| Thermal printer (80mm) re-test after RAW-spooler overhaul | Printer now on-site; first test exposed notepad-fallback issues → overhauled (`1c99a75`); re-test pending |
 | `cargo tauri build` MSI/NSIS with self-signed cert ("AUZ Tech") | Pending |
 | Staff quick-start documentation | Pending |
 
@@ -76,8 +92,8 @@ and `npx tsc --noEmit` (no new type errors in touched files). The following need
 running app:
 
 - [ ] Login → dashboard → POS smoke test; dashboard numbers identical to pre-cleanup
-- [ ] Thermal receipt (80mm): prints at roll width via ESC/POS; totals/paid/balance match UI exactly
-  (receipt `format_price` paise bug fixed alongside Phase 3's PDF fix — verify with a real sale)
+- [ ] Thermal receipt (80mm) after overhaul: prints via spooler RAW at roll width, no excess feed,
+  auto-cut fires, two-column layout renders cleanly; totals/paid/balance match UI exactly
 - [ ] PDF invoice: generate from a real invoice via "Download A4 PDF"; totals/paid/balance match UI exactly
 - [ ] Cashier reset-password: admin resets → new password works, old rejected
 - [ ] Backup: export → import roundtrip preserves data; corrupt/garbage file rejected cleanly
@@ -137,7 +153,8 @@ remain unused by the UI; these semantic gaps are recorded so nobody "fixes" them
 | Payment rule | Invoice number tracks dues universally; customer balance mirrors any attached-customer due |
 | Code signing | Self-signed, publisher "AUZ Tech" |
 | Seed products | 20 examples ship via migration 004 |
-| Printing | ESC/POS raw USB (rusb) + spooler fallback; genpdf A4 invoices |
+| Printing | Receipts: ESC/POS direct USB → Windows spooler **RAW** to default printer (48-char width, auto-cut); A4 genpdf invoices via "Download A4 PDF" (2026-08-23) |
+| Migrations | **Immutable once applied** — never edit files in `src-tauri/src/database/migrations/`; LF endings pinned via `.gitattributes`; corrections go in new numbered migrations (2026-08-23) |
 | Public `/website/*` routes | **Deleted from app** (2026-08-23): routes, SiteShell/InquiryForm, Supabase dep removed |
 | JWT secret | **Per-install random key file** `%PROGRAMDATA%\CityTiles\jwt.key`; env var wins; hardcoded fallback removed (2026-08-23) |
 | Money unit | **Whole rupees are canonical** everywhere incl. PDF invoices — no paise conversion anywhere (2026-08-23) |
