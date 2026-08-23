@@ -1,4 +1,3 @@
-import { supabase } from "@/integrations/supabase/client";
 const marbleImg = "/images/cat-marble.jpg";
 const tilesImg = "/images/cat-tiles.jpg";
 const chipsImg = "/images/cat-chips.jpg";
@@ -70,17 +69,3 @@ export const currency = (value: number) =>
     currency: "PKR",
     maximumFractionDigits: 0,
   }).format(Number(value || 0));
-
-export async function fetchProducts(category?: Category) {
-  let query = supabase.from("products").select("*").order("category").order("name");
-  if (category) query = query.eq("category", category);
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data ?? []) as unknown as Product[];
-}
-
-export async function fetchProduct(id: string) {
-  const { data, error } = await supabase.from("products").select("*").eq("id", id).maybeSingle();
-  if (error) throw error;
-  return (data as unknown as Product) ?? null;
-}

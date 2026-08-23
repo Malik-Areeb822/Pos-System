@@ -1,5 +1,5 @@
 // POS SYSTEM — ACTIVE. Entry point: this login screen is served at "/".
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -82,9 +82,7 @@ function AuthPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[--marble-black] px-5 py-16">
       <div className="w-full max-w-md border border-border/40 bg-card p-8 md:p-10 shadow-stone">
-        <Link to="/website" className="eyebrow text-brass">
-          City Tiles
-        </Link>
+        <span className="eyebrow text-brass">City Tiles</span>
         <h1 className="mt-5 text-3xl">
           {mode === "signin"
             ? "Staff sign in"
