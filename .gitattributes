@@ -1,0 +1,4 @@
+# sqlx migration checksums are computed over raw file bytes — line endings must
+# never vary between machines or checkouts, or existing databases will fail
+# validation ("migration was previously applied but has been modified").
+src-tauri/src/database/migrations/*.sql text eol=lf
