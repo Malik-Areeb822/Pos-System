@@ -76,6 +76,8 @@ and `npx tsc --noEmit` (no new type errors in touched files). The following need
 running app:
 
 - [ ] Login → dashboard → POS smoke test; dashboard numbers identical to pre-cleanup
+- [ ] Thermal receipt (80mm): prints at roll width via ESC/POS; totals/paid/balance match UI exactly
+  (receipt `format_price` paise bug fixed alongside Phase 3's PDF fix — verify with a real sale)
 - [ ] PDF invoice: generate from a real invoice via "Download A4 PDF"; totals/paid/balance match UI exactly
 - [ ] Cashier reset-password: admin resets → new password works, old rejected
 - [ ] Backup: export → import roundtrip preserves data; corrupt/garbage file rejected cleanly

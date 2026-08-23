@@ -27,33 +27,75 @@ pub async fn print_receipt(app: &AppHandle, pool: &DbPool, invoice_id: &str) -> 
 }
 
 async fn print_escpos_usb(inv: &crate::repositories::invoices::Invoice, items: &[crate::repositories::invoices::InvoiceItem]) -> Result<(), AppError> {
-    use rusb::{Context, DeviceHandle};
-    
-    // Common thermal printer VID/PIDs
-    const KNOWN_PRINTERS: &[(u16, u16)] = &[
-        (0x0416, 0x5011), // Epson
-        (0x0483, 0x5740), // Generic
-        (0x0FE6, 0x811E), // Xprinter
-        (0x1FC9, 0x2016), // Posiflex
-    ];
-    
+    use rusb::{Context, Direction, TransferType};
+
+    // Accept known thermal-printer VID/PIDs (see is_known_printer below),
+    // plus any device claiming the standard USB printer class (0x07) —
+    // covers budget 80mm/58mm models not on the list.
     let ctx = Context::new()?;
-    
-    for (vid, pid) in KNOWN_PRINTERS {
-        if let Some(mut handle) = ctx.open_device_with_vid_pid(*vid, *pid) {
-            if handle.kernel_driver_active(0)? {
-                handle.detach_kernel_driver(0)?;
+    let devices = ctx.devices()?;
+    let data = build_escpos_receipt(inv, items);
+
+    for device in devices.iter() {
+        let desc = match device.device_descriptor() {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        let is_printer = desc.class_code() == 0x07
+            || is_known_printer(desc.vendor_id(), desc.product_id());
+        if !is_printer {
+            continue;
+        }
+
+        let mut handle = match device.open() {
+            Ok(h) => h,
+            Err(_) => continue,
+        };
+        if handle.kernel_driver_active(0).unwrap_or(false) {
+            let _ = handle.detach_kernel_driver(0);
+        }
+
+        // Discover the real bulk OUT endpoint instead of assuming 0x01.
+        let mut target: Option<(u8, u8)> = None; // (interface_number, endpoint_address)
+        if let Ok(cfg) = device.config_descriptor(0) {
+            'outer: for iface in cfg.interfaces() {
+                for setting in iface.descriptors() {
+                    for ep in setting.endpoint_descriptors() {
+                        if ep.transfer_type() == TransferType::Bulk
+                            && ep.direction() == Direction::Out
+                        {
+                            target = Some((setting.interface_number(), ep.address()));
+                            break 'outer;
+                        }
+                    }
+                }
             }
-            handle.claim_interface(0)?;
-            
-            let data = build_escpos_receipt(inv, items);
-            handle.write_bulk(0x01, &data, Duration::from_secs(5))?;
-            
-            handle.release_interface(0)?;
-            return Ok(());
+        }
+        let Some((interface_num, endpoint_addr)) = target else {
+            continue;
+        };
+
+        if handle.claim_interface(interface_num).is_err() {
+            continue;
+        }
+
+        match handle.write_bulk(endpoint_addr, &data, Duration::from_secs(5)) {
+            Ok(_) => {
+                let _ = handle.release_interface(interface_num);
+                return Ok(());
+            }
+            Err(e) => {
+                let _ = handle.release_interface(interface_num);
+                tracing::warn!(
+                    "ESC/POS write failed on {:04x}:{:04x}: {}",
+                    desc.vendor_id(),
+                    desc.product_id(),
+                    e
+                );
+            }
         }
     }
-    
+
     Err(AppError::Usb(rusb::Error::NotFound))
 }
 
@@ -190,10 +232,10 @@ fn build_text_receipt(inv: &crate::repositories::invoices::Invoice, items: &[cra
     output
 }
 
-fn format_price(paise: i64) -> String {
-    let rupees = paise / 100;
-    let paise_rem = paise % 100;
-    format!("PKR {}.{:02}", rupees, paise_rem)
+/// Amounts are stored and displayed as whole rupees everywhere in the app
+/// (see HANDOFF.md locked decisions) — no paise conversion here.
+fn format_price(rupees: i64) -> String {
+    format!("PKR {}", rupees)
 }
 
 pub async fn list_usb_printers() -> Result<Vec<crate::commands::print::UsbPrinterInfo>, AppError> {
@@ -242,10 +284,12 @@ pub async fn list_usb_printers() -> Result<Vec<crate::commands::print::UsbPrinte
 
 fn is_known_printer(vid: u16, pid: u16) -> bool {
     const KNOWN_PRINTERS: &[(u16, u16)] = &[
-        (0x0416, 0x5011), // Epson
-        (0x0483, 0x5740), // Generic
-        (0x0FE6, 0x811E), // Xprinter
+        (0x0416, 0x5011), // Winic/Epson-compatible (common in budget thermal printers)
+        (0x0483, 0x5740), // STMicroelectronics CDC (common thermal board)
+        (0x0FE6, 0x811E), // Xprinter and clones
         (0x1FC9, 0x2016), // Posiflex
+        (0x04B8, 0x0202), // Seiko Epson TM series
+        (0x0499, 0x0032), // Zjiang / Goojprt-style boards
     ];
     KNOWN_PRINTERS.contains(&(vid, pid))
 }
