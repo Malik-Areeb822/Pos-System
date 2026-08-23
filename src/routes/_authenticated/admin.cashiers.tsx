@@ -6,7 +6,10 @@ import { toast } from "sonner";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AdminOnly } from "@/components/admin/AdminOnly";
 import { Button } from "@/components/ui/button";
-import { useCashiers, useApproveCashier, useRejectCashier, useSuspendCashier, type StaffProfile } from "@/features/cashiers/api";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useCashiers, useApproveCashier, useRejectCashier, useSuspendCashier, useResetCashierPassword, type StaffProfile } from "@/features/cashiers/api";
 import { formatDate } from "@/features/invoices/api";
 
 export const Route = createFileRoute("/_authenticated/admin/cashiers")({
@@ -47,6 +50,11 @@ function CashiersPage() {
   const approve = useApproveCashier();
   const reject = useRejectCashier();
   const suspend = useSuspendCashier();
+  const resetPassword = useResetCashierPassword();
+
+  const [resetTarget, setResetTarget] = useState<StaffProfile | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const rows = staff.filter((s: StaffProfile) => s.status === tab && s.id !== user?.id);
   const pendingCount = staff.filter((s) => s.status === "pending" && s.id !== user?.id).length;
@@ -63,6 +71,35 @@ function CashiersPage() {
         suspend.mutate(id);
         break;
     }
+  }
+
+  function openResetDialog(cashier: StaffProfile) {
+    setResetTarget(cashier);
+    setNewPassword("");
+    setConfirmPassword("");
+  }
+
+  function submitReset() {
+    if (!resetTarget) return;
+    if (newPassword.length < 6) {
+      toast.error("New password must be at least 6 characters");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    const target = resetTarget;
+    resetPassword.mutate(
+      { id: target.id, newPassword },
+      {
+        onSuccess: () => {
+          toast.success(`Password reset for ${target.full_name || "cashier"}`);
+          setResetTarget(null);
+        },
+        onError: (err: Error) => toast.error(err.message),
+      },
+    );
   }
 
   return (
@@ -133,9 +170,14 @@ function CashiersPage() {
                       </>
                     )}
                     {s.status === "approved" && (
-                      <Button size="sm" variant="outline" onClick={() => act(s.id, "suspended")}>
-                        Suspend
-                      </Button>
+                      <>
+                        <Button size="sm" variant="outline" onClick={() => act(s.id, "suspended")}>
+                          Suspend
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => openResetDialog(s)}>
+                          Reset password
+                        </Button>
+                      </>
                     )}
                     {(s.status === "suspended" || s.status === "rejected") && (
                       <Button size="sm" variant="brass" onClick={() => act(s.id, "approved")}>
@@ -149,6 +191,51 @@ function CashiersPage() {
           </tbody>
         </table>
       </div>
+
+      <Dialog open={!!resetTarget} onOpenChange={(open) => !open && setResetTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Reset password</DialogTitle>
+            <DialogDescription>
+              Set a new password for {resetTarget?.full_name || "this cashier"}. They will use it on
+              their next sign-in.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="reset-new-password">New password</Label>
+              <Input
+                id="reset-new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="reset-confirm-password">Confirm password</Label>
+              <Input
+                id="reset-confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button size="sm" variant="outline" onClick={() => setResetTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant="brass"
+              disabled={resetPassword.isPending || newPassword.length === 0}
+              onClick={submitReset}
+            >
+              {resetPassword.isPending ? "Saving…" : "Reset password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminShell>
   );
 }

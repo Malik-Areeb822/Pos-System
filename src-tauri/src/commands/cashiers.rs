@@ -68,5 +68,6 @@ pub async fn reset_password(app: AppHandle, pool: State<'_, DbPool>, input: Rese
     let repo = CashierRepository::new(pool.inner().clone());
     let password_hash = hash_password(&input.new_password)?;
     repo.reset_password(&input.id, &password_hash).await?;
+    crate::events::emit_cashiers_changed(&app).await;
     Ok(())
 }

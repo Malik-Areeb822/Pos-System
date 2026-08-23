@@ -51,7 +51,12 @@ export function useSuspendCashier() {
 }
 
 export function useResetCashierPassword() {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.cashiers.resetPassword(id),
+    mutationFn: ({ id, newPassword }: { id: string; newPassword: string }) =>
+      api.cashiers.resetPassword(id, newPassword),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cashiers"] });
+    },
   });
 }
