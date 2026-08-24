@@ -1,7 +1,7 @@
 // src-tauri/src/repositories/returns.rs
-use sqlx::{SqlitePool, Row};
+use sqlx::SqlitePool;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use crate::error::AppError;
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
@@ -74,9 +74,55 @@ impl ReturnRepository {
 
     pub async fn create(&self, input: CreateReturnInput) -> Result<Return, AppError> {
         let mut tx = self.pool.begin().await?;
-        
+
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
+
+        // Over-return guard (ledger integrity): cumulative returned quantity
+        // per product must never exceed what was originally invoiced.
+        // Matched on product_id when present, falling back to product name.
+        let sold: i64 = if let Some(pid) = &input.product_id {
+            sqlx::query!(
+                "SELECT COALESCE(SUM(quantity), 0) AS q FROM invoice_items WHERE invoice_id = ? AND product_id = ?",
+                input.invoice_id, pid
+            )
+            .fetch_one(&mut *tx)
+            .await?
+            .q
+        } else {
+            sqlx::query!(
+                "SELECT COALESCE(SUM(quantity), 0) AS q FROM invoice_items WHERE invoice_id = ? AND product_name = ?",
+                input.invoice_id, input.product_name
+            )
+            .fetch_one(&mut *tx)
+            .await?
+            .q
+        };
+        let already: i64 = if let Some(pid) = &input.product_id {
+            sqlx::query!(
+                "SELECT COALESCE(SUM(quantity), 0) AS q FROM returns WHERE invoice_id = ? AND product_id = ?",
+                input.invoice_id, pid
+            )
+            .fetch_one(&mut *tx)
+            .await?
+            .q
+        } else {
+            sqlx::query!(
+                "SELECT COALESCE(SUM(quantity), 0) AS q FROM returns WHERE invoice_id = ? AND product_name = ?",
+                input.invoice_id, input.product_name
+            )
+            .fetch_one(&mut *tx)
+            .await?
+            .q
+        };
+        if input.quantity > sold - already {
+            return Err(AppError::Validation(format!(
+                "Cannot return {} {}: only {} remain returnable on this invoice",
+                input.quantity,
+                input.unit,
+                (sold - already).max(0)
+            )));
+        }
 
         sqlx::query!(
             r#"INSERT INTO returns (id, invoice_id, product_id, product_name, quantity, unit, unit_price, line_total, reason, processed_by, created_at)

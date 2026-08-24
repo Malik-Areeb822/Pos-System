@@ -58,6 +58,15 @@ export function useInvoices() {
   });
 }
 
+export function useInvoiceSearch(query: string) {
+  const trimmed = query.trim();
+  return useQuery({
+    queryKey: ["invoices", "search", trimmed],
+    queryFn: () => api.invoices.list({ query: trimmed }),
+    enabled: trimmed.length > 0,
+  });
+}
+
 export function useInvoice(id: string) {
   return useQuery({
     queryKey: ["invoice", id],

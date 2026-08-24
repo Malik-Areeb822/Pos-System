@@ -141,6 +141,7 @@ pub async fn import_products_from_csv(pool: &DbPool, csv_content: &str) -> Resul
             color,
             size,
             finish,
+            company: None,
             unit,
             price,
             pieces_per_carton,

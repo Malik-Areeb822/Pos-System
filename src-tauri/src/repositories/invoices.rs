@@ -1,7 +1,7 @@
 // src-tauri/src/repositories/invoices.rs
-use sqlx::{SqlitePool, Row};
+use sqlx::SqlitePool;
 use uuid::Uuid;
-use chrono::{DateTime, Utc, Datelike};
+use chrono::{Utc, Datelike};
 use crate::error::AppError;
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
@@ -67,14 +67,40 @@ impl InvoiceRepository {
         Self { pool }
     }
 
-    pub async fn list(&self, limit: i64, offset: i64) -> Result<Vec<Invoice>, AppError> {
-        let invoices = sqlx::query_as_unchecked!(
-            Invoice,
-            r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices ORDER BY created_at DESC LIMIT ? OFFSET ?"#,
-            limit, offset
-        )
-        .fetch_all(&self.pool)
-        .await?;
+    /// Cap for full-history searches — keeps the webview table light while
+    /// still reaching invoices far older than the default page.
+    pub const SEARCH_CAP: i64 = 200;
+
+    pub async fn list(
+        &self,
+        limit: i64,
+        offset: i64,
+        query: Option<&str>,
+    ) -> Result<Vec<Invoice>, AppError> {
+        let invoices = if let Some(q) = query.map(str::trim).filter(|q| !q.is_empty()) {
+            // Full-history search across invoice number and customer name
+            // (case-insensitive), newest first, capped.
+            sqlx::query_as_unchecked!(
+                Invoice,
+                r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices
+                   WHERE LOWER(invoice_no) LIKE '%' || LOWER(?) || '%'
+                      OR LOWER(customer_name) LIKE '%' || LOWER(?) || '%'
+                   ORDER BY created_at DESC LIMIT ?"#,
+                q,
+                q,
+                Self::SEARCH_CAP
+            )
+            .fetch_all(&self.pool)
+            .await?
+        } else {
+            sqlx::query_as_unchecked!(
+                Invoice,
+                r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices ORDER BY created_at DESC LIMIT ? OFFSET ?"#,
+                limit, offset
+            )
+            .fetch_all(&self.pool)
+            .await?
+        };
         Ok(invoices)
     }
 
@@ -112,7 +138,46 @@ impl InvoiceRepository {
 
     pub async fn create(&self, input: CreateInvoiceInput) -> Result<Invoice, AppError> {
         let mut tx = self.pool.begin().await?;
-        
+
+        // Stock availability guard (hard block): aggregate wanted quantities
+        // per product across all cart lines — the same product may appear on
+        // several lines — then compare once against live stock inside this
+        // transaction. Overselling can never drive stock negative.
+        {
+            let mut wanted: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+            for item in &input.items {
+                if let Some(pid) = &item.product_id {
+                    *wanted.entry(pid.clone()).or_insert(0) += item.quantity;
+                }
+            }
+            let mut shortfalls: Vec<String> = Vec::new();
+            for (pid, qty) in &wanted {
+                if *qty <= 0 {
+                    continue;
+                }
+                if let Some(p) = sqlx::query!(
+                    "SELECT name, stock_qty FROM products WHERE id = ?",
+                    pid
+                )
+                .fetch_optional(&mut *tx)
+                .await?
+                {
+                    if p.stock_qty < *qty {
+                        shortfalls.push(format!(
+                            "\"{}\" — in stock: {}, tried: {}",
+                            p.name, p.stock_qty, qty
+                        ));
+                    }
+                }
+            }
+            if !shortfalls.is_empty() {
+                return Err(AppError::Validation(format!(
+                    "Not enough stock: {}",
+                    shortfalls.join("; ")
+                )));
+            }
+        }
+
         // Get next invoice number
         let invoice_no = get_next_invoice_no(&mut tx).await?;
         

@@ -1,6 +1,5 @@
 // src-tauri/src/services/print.rs
 use rusb::UsbContext as _;
-use tauri::AppHandle;
 use crate::DbPool;
 use crate::error::AppError;
 use crate::repositories::InvoiceRepository;
@@ -13,30 +12,75 @@ const GS: u8 = 0x1D;
 /// 58mm printers typically fit 32 — adjust here if ever needed.
 const RECEIPT_WIDTH: usize = 48;
 
-pub async fn print_receipt(_app: &AppHandle, pool: &DbPool, invoice_id: &str) -> Result<(), AppError> {
+/// Fallback business identity printed on every receipt. Mirrors
+/// `src/lib/business.ts`; the frontend normally sends this explicitly.
+const DEFAULT_BUSINESS_NAME: &str = "City Tiles";
+const DEFAULT_BUSINESS_ADDRESS: &str = "Mansehra Road, Abbottabad, Khyber Pakhtunkhwa";
+const DEFAULT_BUSINESS_PHONE: &str = "0334 5333447";
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ReceiptBusiness {
+    pub name: String,
+    pub address: String,
+    pub phone: String,
+}
+
+impl Default for ReceiptBusiness {
+    fn default() -> Self {
+        Self {
+            name: DEFAULT_BUSINESS_NAME.to_string(),
+            address: DEFAULT_BUSINESS_ADDRESS.to_string(),
+            phone: DEFAULT_BUSINESS_PHONE.to_string(),
+        }
+    }
+}
+
+pub async fn print_receipt(
+    pool: &DbPool,
+    invoice_id: &str,
+    business: Option<ReceiptBusiness>,
+) -> Result<(), AppError> {
     let repo = InvoiceRepository::new(pool.clone());
     let invoice = repo.get_with_items(invoice_id).await?
         .ok_or(AppError::NotFound("Invoice not found".into()))?;
 
     let (inv, items) = invoice;
+    let biz = business.unwrap_or_default();
 
-    // One ESC/POS byte stream serves both paths.
-    let data = build_escpos_receipt(&inv, &items);
+    // Preferred: raster receipt rendered with the POS's real typefaces
+    // (Karla + Cormorant Garamond) via the GS v 0 raster command.
+    // Fallback: classic ESC/POS text mode if font rendering is unavailable.
+    let data = match crate::services::receipt_bitmap::render_receipt(&inv, &items, &biz) {
+        Some(bytes) => bytes,
+        None => {
+            tracing::warn!("Receipt font rendering unavailable; using ESC/POS text mode");
+            build_escpos_receipt(&inv, &items, &biz)
+        }
+    };
 
-    // Path 1: direct USB ESC/POS — fastest, works even without a driver.
-    if let Err(e) = print_escpos_usb(&data).await {
-        tracing::warn!(
-            "ESC/POS USB print unavailable ({}); falling back to Windows spooler (RAW)",
-            e
-        );
-    } else {
-        return Ok(());
+    // Path 1 (Windows): Print Spooler API with RAW datatype — the printer is
+    // installed as a Windows printer, so this is the predictable route. RAW
+    // bypasses driver pagination entirely; the roll only advances for the
+    // content we actually send.
+    #[cfg(target_os = "windows")]
+    {
+        match print_via_spooler(&data).await {
+            Ok(()) => return Ok(()),
+            Err(e) => tracing::warn!(
+                "Spooler RAW print failed ({}); falling back to direct USB ESC/POS",
+                e
+            ),
+        }
+        // Path 2 (Windows): direct USB ESC/POS — works even without a driver.
+        print_escpos_usb(&data).await
     }
 
-    // Path 2: Windows spooler with RAW datatype — the printer still receives
-    // our ESC/POS stream, so formatting and auto-cut behave exactly like path 1
-    // and no page-size feed is triggered. (Replaces the old notepad /p hack.)
-    print_via_spooler(&inv, &items, &data).await
+    // Non-Windows: lp/lpr with the plain-text twin (no RAW passthrough API).
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = &data;
+        print_via_spooler_unix(&inv, &items).await
+    }
 }
 
 async fn print_escpos_usb(data: &[u8]) -> Result<(), AppError> {
@@ -112,14 +156,9 @@ async fn print_escpos_usb(data: &[u8]) -> Result<(), AppError> {
 }
 
 /// Send raw bytes to the default Windows printer using the Print Spooler API
-/// with the RAW datatype. RAW bypasses driver pagination entirely — the roll
-/// only advances for content actually sent.
+/// with the RAW datatype.
 #[cfg(target_os = "windows")]
-async fn print_via_spooler(
-    _inv: &crate::repositories::invoices::Invoice,
-    _items: &[crate::repositories::invoices::InvoiceItem],
-    data: &[u8],
-) -> Result<(), AppError> {
+async fn print_via_spooler(data: &[u8]) -> Result<(), AppError> {
     use std::os::windows::ffi::OsStrExt;
     use std::ffi::OsStr;
     use windows::core::{PCWSTR, PWSTR};
@@ -194,10 +233,9 @@ async fn print_via_spooler(
 }
 
 #[cfg(not(target_os = "windows"))]
-async fn print_via_spooler(
+async fn print_via_spooler_unix(
     inv: &crate::repositories::invoices::Invoice,
     items: &[crate::repositories::invoices::InvoiceItem],
-    _data: &[u8],
 ) -> Result<(), AppError> {
     use std::process::Command;
 
@@ -253,33 +291,102 @@ fn two_col(left: &str, right: &str) -> String {
     out
 }
 
+/// Word-wrapped, manually centered line for the plain-text twin only.
+/// (On the thermal path the printer's own ESC a 1 center mode is used.)
+#[cfg_attr(windows, allow(dead_code))]
+fn center_wrapped(text: &str) -> String {
+    fn flush(out: &mut String, line: &str) {
+        let pad = RECEIPT_WIDTH.saturating_sub(line.chars().count()) / 2;
+        for _ in 0..pad {
+            out.push(' ');
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+
+    let mut out = String::new();
+    for raw_line in text.lines() {
+        let words: Vec<&str> = raw_line.split_whitespace().collect();
+        if words.is_empty() {
+            out.push('\n');
+            continue;
+        }
+        let mut current = String::new();
+        for word in words {
+            let next_len = current.chars().count()
+                + if current.is_empty() { 0 } else { 1 }
+                + word.chars().count();
+            if next_len > RECEIPT_WIDTH && !current.is_empty() {
+                flush(&mut out, &current);
+                current.clear();
+            }
+            if !current.is_empty() {
+                current.push(' ');
+            }
+            current.push_str(word);
+        }
+        if !current.is_empty() {
+            flush(&mut out, &current);
+        }
+    }
+    out
+}
+
 fn rule(c: char) -> String {
     let mut s = c.to_string().repeat(RECEIPT_WIDTH);
     s.push('\n');
     s
 }
 
-fn build_escpos_receipt(inv: &crate::repositories::invoices::Invoice, items: &[crate::repositories::invoices::InvoiceItem]) -> Vec<u8> {
+/// Invoice timestamp as "YYYY-MM-DD HH:MM"; created_at is stored ISO-8601.
+/// Falls back to the bare date slice when parsing fails.
+fn format_timestamp(created_at: &str) -> String {
+    let parsed = chrono::DateTime::parse_from_rfc3339(created_at)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(created_at, "%Y-%m-%dT%H:%M:%S%.f")
+                .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+        })
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(created_at, "%Y-%m-%dT%H:%M:%S")
+                .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+        });
+
+    match parsed {
+        Ok(ts) => ts,
+        Err(_) => created_at.split('T').next().unwrap_or(created_at).to_string(),
+    }
+}
+
+fn build_escpos_receipt(
+    inv: &crate::repositories::invoices::Invoice,
+    items: &[crate::repositories::invoices::InvoiceItem],
+    business: &ReceiptBusiness,
+) -> Vec<u8> {
     let mut data = Vec::new();
 
-    // Initialize + double-height centered store banner.
+    // Initialize printer state, enter center mode for the whole header.
     data.extend_from_slice(&[ESC, b'@']);
-    data.extend_from_slice(&[ESC, b'a', 1]); // center
-    data.extend_from_slice(&[GS, b'!', 0x11]); // double width + height
-    data.extend_from_slice(b"CITY TILES POS\n");
-    data.extend_from_slice(&[GS, b'!', 0x00]); // back to normal size
-    data.extend_from_slice(b"\n");
+    data.extend_from_slice(&[ESC, b'a', 1]);
 
-    // Invoice meta.
-    data.extend_from_slice(&[ESC, b'a', 0]); // left
+    // Business name large and centered.
+    data.extend_from_slice(&[GS, b'!', 0x11]); // double height + width
+    data.extend_from_slice(business.name.trim_end().as_bytes());
+    data.push(b'\n');
+    data.extend_from_slice(&[GS, b'!', 0x00]); // normal size
+
+    // Address + phone — the printer centers them (no manual padding).
+    data.extend_from_slice(business.address.trim().as_bytes());
+    data.push(b'\n');
+    data.extend_from_slice(business.phone.trim().as_bytes());
+    data.push(b'\n');
+
+    data.extend_from_slice(rule('=').as_bytes());
+
+    // Left-aligned meta block.
+    data.extend_from_slice(&[ESC, b'a', 0]);
     data.extend_from_slice(two_col("Invoice", &inv.invoice_no).as_bytes());
-    data.extend_from_slice(
-        two_col(
-            "Date",
-            inv.created_at.split('T').next().unwrap_or(""),
-        )
-        .as_bytes(),
-    );
+    data.extend_from_slice(two_col("Date", &format_timestamp(&inv.created_at)).as_bytes());
     data.extend_from_slice(two_col("Customer", &inv.customer_name).as_bytes());
     data.extend_from_slice(rule('-').as_bytes());
 
@@ -301,9 +408,10 @@ fn build_escpos_receipt(inv: &crate::repositories::invoices::Invoice, items: &[c
     // Totals — TOTAL row emphasised with bold.
     data.extend_from_slice(two_col("Subtotal", &format_price(inv.subtotal)).as_bytes());
     if inv.discount > 0 {
-        data.extend_from_slice(two_col("Discount", &format!("-{}", format_price(inv.discount))).as_bytes());
+        data.extend_from_slice(
+            two_col("Discount", &format!("-{}", format_price(inv.discount))).as_bytes(),
+        );
     }
-    data.extend_from_slice(rule('-').as_bytes());
     data.extend_from_slice(&[ESC, b'E', 1]); // bold on
     data.extend_from_slice(two_col("TOTAL", &format_price(inv.total)).as_bytes());
     data.extend_from_slice(&[ESC, b'E', 0]); // bold off
@@ -324,9 +432,13 @@ fn build_escpos_receipt(inv: &crate::repositories::invoices::Invoice, items: &[c
         }
     }
 
+    // Centered footer: thanks + developer credit.
+    data.extend_from_slice(&[ESC, b'a', 1]);
+    data.extend_from_slice(b"\nThank you!\nDeveloped by AUZ Tech\n");
+
     // Short trailing feed + auto cut (no page-sized waste — the printer only
     // feeds what we ask for).
-    data.extend_from_slice(b"\n\nThank you!\n\n\n");
+    data.extend_from_slice(b"\n\n\n");
     data.extend_from_slice(&[GS, b'V', 1]);
 
     data
@@ -334,11 +446,17 @@ fn build_escpos_receipt(inv: &crate::repositories::invoices::Invoice, items: &[c
 
 /// Plain-text twin used by the non-Windows spooler fallback only.
 #[cfg(not(target_os = "windows"))]
-fn build_text_receipt(inv: &crate::repositories::invoices::Invoice, items: &[crate::repositories::invoices::InvoiceItem]) -> String {
+fn build_text_receipt(
+    inv: &crate::repositories::invoices::Invoice,
+    items: &[crate::repositories::invoices::InvoiceItem],
+) -> String {
     let mut out = String::new();
-    out.push_str("CITY TILES POS\n\n");
+    out.push_str(&center_wrapped(DEFAULT_BUSINESS_NAME));
+    out.push_str(&center_wrapped(DEFAULT_BUSINESS_ADDRESS));
+    out.push_str(&center_wrapped(DEFAULT_BUSINESS_PHONE));
+    out.push_str(&rule('='));
     out.push_str(&two_col("Invoice", &inv.invoice_no));
-    out.push_str(&two_col("Date", inv.created_at.split('T').next().unwrap_or("")));
+    out.push_str(&two_col("Date", &format_timestamp(&inv.created_at)));
     out.push_str(&two_col("Customer", &inv.customer_name));
     out.push_str(&rule('-'));
     for item in items {
@@ -367,7 +485,8 @@ fn build_text_receipt(inv: &crate::repositories::invoices::Invoice, items: &[cra
             out.push('\n');
         }
     }
-    out.push_str("\nThank you!\n");
+    out.push_str(&center_wrapped("Thank you!"));
+    out.push_str(&center_wrapped("Developed by AUZ Tech"));
     out
 }
 
@@ -431,4 +550,35 @@ fn is_known_printer(vid: u16, pid: u16) -> bool {
         (0x0499, 0x0032), // Zjiang / Goojprt-style boards
     ];
     KNOWN_PRINTERS.contains(&(vid, pid))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn two_col_aligns_amounts_right() {
+        let row = two_col("Subtotal", "PKR 100");
+        assert_eq!(row.trim_end().chars().count(), RECEIPT_WIDTH);
+        assert!(row.ends_with("PKR 100\n"));
+    }
+
+    #[test]
+    fn center_wraps_long_addresses_on_word_boundaries() {
+        let out = center_wrapped(DEFAULT_BUSINESS_ADDRESS);
+        for line in out.lines() {
+            assert!(line.chars().count() <= RECEIPT_WIDTH);
+        }
+        assert_eq!(out.split_whitespace().collect::<Vec<_>>().join(" "), DEFAULT_BUSINESS_ADDRESS);
+    }
+
+    #[test]
+    fn timestamp_parses_iso_and_keeps_fallback() {
+        assert_eq!(format_timestamp("2026-08-23T14:35:00"), "2026-08-23 14:35");
+        assert_eq!(
+            format_timestamp("2026-08-23T14:35:00.123456+00:00"),
+            "2026-08-23 14:35"
+        );
+        assert_eq!(format_timestamp("2026-08-23"), "2026-08-23");
+    }
 }

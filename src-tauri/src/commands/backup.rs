@@ -140,10 +140,17 @@ pub async fn import_database(app: AppHandle, db: State<'_, Db>, backup_path: Str
 
     match crate::database::open_pool(&config.db_path).await {
         Ok(new_pool) => {
+            // Bring a restored database up to retention policy too (older
+            // backups may contain sales beyond the 12-month window).
+            let purge_pool = new_pool.clone();
             *guard = new_pool;
             drop(guard);
             let _ = old; // already closed
             crate::events::emit_database_restored(&app).await;
+            tauri::async_runtime::spawn(crate::services::retention::run_maintenance(
+                app.clone(),
+                purge_pool,
+            ));
             Ok(())
         }
         Err(e) => {

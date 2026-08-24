@@ -1,15 +1,18 @@
 import { api } from "@/lib/api-client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
+export type Category = "marble" | "tiles" | "chips" | "sanitary";
+
 export type Product = {
   id: string;
   name: string;
   sku: string | null;
-  category: "marble" | "tiles" | "chips" | "sanitary";
+  category: Category;
   description: string;
   color: string | null;
   size: string | null;
   finish: string | null;
+  company: string | null;
   unit: string;
   price: number;
   pieces_per_carton: number | null;
@@ -21,18 +24,19 @@ export type Product = {
 
 export type CreateProductInput = {
   name: string;
-  sku?: string;
-  category: "marble" | "tiles" | "chips" | "sanitary";
+  sku?: string | null;
+  category: Category;
   description: string;
-  color?: string;
-  size?: string;
-  finish?: string;
+  color?: string | null;
+  size?: string | null;
+  finish?: string | null;
+  company?: string | null;
   unit: string;
   price: number;
-  pieces_per_carton?: number;
+  pieces_per_carton?: number | null;
   stock_qty: number;
   low_stock_threshold: number;
-  image_url?: string;
+  image_url?: string | null;
   is_published?: boolean;
 };
 
@@ -97,20 +101,34 @@ export function useImportProducts() {
   });
 }
 
-export function useExportProducts() {
-  return useMutation({
-    mutationFn: () => api.products.export(),
-  });
-}
-
 export const CATEGORIES = [
-  { key: "marble" as const, label: "Marble", blurb: "Slabs and tiles cut from natural stone for floors, walls and counters.", image: "/images/cat-marble.jpg" },
-  { key: "tiles" as const, label: "Tiles", blurb: "Porcelain and ceramic in every size, finish and pattern we stock.", image: "/images/cat-tiles.jpg" },
-  { key: "chips" as const, label: "Flooring Chips", blurb: "Graded marble chips by colour for terrazzo-style cast flooring.", image: "/images/cat-chips.jpg" },
-  { key: "sanitary" as const, label: "Sanitary", blurb: "Commodes, basins, mixers and fittings for homes and TB lounges.", image: "/images/cat-sanitary.jpg" },
+  {
+    key: "tiles" as const,
+    label: "Tiles",
+    blurb: "Porcelain and ceramic in every size, finish and pattern we stock.",
+    image: "/images/cat-tiles.jpg",
+  },
+  {
+    key: "sanitary" as const,
+    label: "Sanitary",
+    blurb: "Commodes, basins, mixers and fittings for homes and TB lounges.",
+    image: "/images/cat-sanitary.jpg",
+  },
+  {
+    key: "marble" as const,
+    label: "Marble",
+    blurb: "Slabs and tiles cut from natural stone for floors, walls and counters.",
+    image: "/images/cat-marble.jpg",
+  },
+  {
+    key: "chips" as const,
+    label: "Flooring Chips",
+    blurb: "Graded marble chips by colour for terrazzo-style cast flooring.",
+    image: "/images/cat-chips.jpg",
+  },
 ] as const;
 
-export function categoryMeta(key: "marble" | "tiles" | "chips" | "sanitary") {
+export function categoryMeta(key: Category) {
   return CATEGORIES.find((c) => c.key === key)!;
 }
 

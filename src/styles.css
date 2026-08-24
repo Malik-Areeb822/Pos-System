@@ -210,3 +210,15 @@
   text-transform: uppercase;
   font-weight: 600;
 }
+
+/* Number inputs: hide native spin buttons — values are typed, never spun,
+   and mouse-wheel mutation is disabled per-field in NumberInput. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

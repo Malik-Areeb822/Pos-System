@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Download, CalendarRange } from "lucide-react";
 import * as XLSX from "xlsx";
+import { toast } from "sonner";
 
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AdminOnly } from "@/components/admin/AdminOnly";
@@ -10,6 +11,7 @@ import { currency } from "@/features/inventory/api";
 import { useInvoices } from "@/features/invoices/api";
 import { useInvoiceRealtime } from "@/lib/tauri-events";
 import { formatDate } from "@/features/invoices/api";
+import { saveWorkbook, fileStamp } from "@/lib/file-save";
 
 export const Route = createFileRoute("/_authenticated/admin/reports")({
   component: () => (
@@ -60,7 +62,7 @@ function within(invoices: { created_at: string; total: number; amount_paid: numb
 const sum = (rows: { total: number; amount_paid: number }[], key: "total" | "amount_paid") =>
   rows.reduce((acc, i) => acc + Number(i[key]), 0);
 
-function exportRows(rows: { invoice_no: string; created_at: string; customer_name: string; payment_method: string; subtotal: number; discount: number; total: number; amount_paid: number; delivery_date: string | null }[], label: string) {
+async function exportRows(rows: { invoice_no: string; created_at: string; customer_name: string; payment_method: string; subtotal: number; discount: number; total: number; amount_paid: number; delivery_date: string | null }[], label: string) {
   const data = rows
     .slice()
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
@@ -94,8 +96,18 @@ function exportRows(rows: { invoice_no: string; created_at: string; customer_nam
   sheet["!cols"] = [{ wch: 14 }, { wch: 14 }, { wch: 24 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, label.slice(0, 30));
-  const stamp = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(book, `city-tiles-${label.toLowerCase().replace(/\s+/g, "-")}-${stamp}.xlsx`);
+  const bytes = new Uint8Array(
+    XLSX.write(book, { bookType: "xlsx", type: "array" }) as ArrayBuffer,
+  );
+  try {
+    const path = await saveWorkbook(
+      `city-tiles-${label.toLowerCase().replace(/\s+/g, "-")}-${fileStamp()}.xlsx`,
+      bytes,
+    );
+    if (path) toast.success(`Exported to ${path}`);
+  } catch (err) {
+    toast.error(`Export failed: ${(err as Error).message}`);
+  }
 }
 
 function ReportsPage() {

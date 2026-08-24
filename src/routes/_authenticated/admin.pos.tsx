@@ -7,11 +7,12 @@ import { toast } from "sonner";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { currency, type Product } from "@/features/inventory/api";
 import { useCustomersForPOS, type Customer } from "@/features/pos/api";
-import { useCreateInvoice } from "@/features/invoices/api";
+import { useCreateInvoice, usePrintReceipt } from "@/features/invoices/api";
 import { useCreateCustomer } from "@/features/customers/api";
 import { useProductsForPOS } from "@/features/pos/api";
 
@@ -31,6 +32,7 @@ function PosPage() {
   const { data: customers = [] } = useCustomersForPOS();
   const createInvoice = useCreateInvoice();
   const createCustomer = useCreateCustomer();
+  const printReceipt = usePrintReceipt();
 
   const [query, setQuery] = useState("");
   const [scan, setScan] = useState("");
@@ -60,7 +62,10 @@ function PosPage() {
   }, [products, query]);
 
   const subtotal = lines.reduce((acc, l) => acc + Number(l.product.price) * l.qty, 0);
-  const total = Math.max(0, subtotal - (Number(discount) || 0));
+  // A stray minus can never ADD money — discount is clamped to >= 0 and the
+  // bill floors at zero.
+  const discountValue = Math.max(0, Number(discount) || 0);
+  const total = Math.max(0, subtotal - discountValue);
   const paidNow = Math.min(Math.max(0, Number(amountPaid) || 0), total);
   const balanceDue = total - paidNow;
 
@@ -118,6 +123,24 @@ function PosPage() {
         throw new Error("Amount paid cannot exceed the total");
       }
 
+      // Stock guard (client pre-check; the backend re-validates in its
+      // transaction). Aggregates per product across duplicate cart lines.
+      const demand = new Map<string, { wanted: number; stock: number; name: string }>();
+      for (const l of lines) {
+        const entry = demand.get(l.product.id);
+        demand.set(l.product.id, {
+          wanted: (entry?.wanted ?? 0) + l.qty,
+          stock: Number(l.product.stock_qty),
+          name: l.product.name,
+        });
+      }
+      const shortfalls = [...demand.values()]
+        .filter((d) => d.wanted > d.stock)
+        .map((d) => `"${d.name}" — in stock: ${d.stock}, tried: ${d.wanted}`);
+      if (shortfalls.length > 0) {
+        throw new Error(`Not enough stock: ${shortfalls.join("; ")}`);
+      }
+
       let customer: Customer | null = null;
       if (customerId) {
         customer = customers.find((c) => c.id === customerId) ?? null;
@@ -148,7 +171,7 @@ function PosPage() {
           line_total: Number(l.product.price) * l.qty,
         })),
         subtotal,
-        discount: Number(discount) || 0,
+        discount: discountValue,
         total,
         amount_paid: paidNow,
         payment_method: method,
@@ -160,6 +183,10 @@ function PosPage() {
     },
     onSuccess: (invoiceId) => {
       toast.success("Invoice created");
+      printReceipt.mutate(invoiceId, {
+        onSuccess: () => toast.success("Receipt sent to printer"),
+        onError: (err: Error) => toast.error(`Receipt printing failed: ${err.message}`),
+      });
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
@@ -313,12 +340,11 @@ function PosPage() {
                       </p>
                     </div>
                     {!box && (
-                      <Input
-                        type="number"
-                        min="1"
+                      <NumberInput
+                        min={1}
                         className="w-20"
                         value={l.qty}
-                        onChange={(e) => setQty(Number(e.target.value) || 1)}
+                        onChange={(e) => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
                       />
                     )}
                     <span className="w-24 text-right text-sm">
@@ -338,9 +364,7 @@ function PosPage() {
                     <div className="mt-2 grid grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs">Cartons</Label>
-                        <Input
-                          type="number"
-                          min="0"
+                        <NumberInput
                           value={cartons}
                           onChange={(e) =>
                             setQty(Math.max(0, Number(e.target.value) || 0) * box + loose)
@@ -349,9 +373,7 @@ function PosPage() {
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">Extra tiles</Label>
-                        <Input
-                          type="number"
-                          min="0"
+                        <NumberInput
                           value={loose}
                           onChange={(e) =>
                             setQty(cartons * box + Math.max(0, Number(e.target.value) || 0))
@@ -425,18 +447,14 @@ function PosPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Discount (PKR)</Label>
-                <Input
-                  type="number"
-                  min="0"
+                <NumberInput
                   value={discount}
                   onChange={(e) => setDiscount(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
                 <Label>Amount paid</Label>
-                <Input
-                  type="number"
-                  min="0"
+                <NumberInput
                   value={amountPaid}
                   onChange={(e) => setAmountPaid(e.target.value)}
                 />

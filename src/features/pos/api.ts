@@ -10,6 +10,7 @@ export type Product = {
   color: string | null;
   size: string | null;
   finish: string | null;
+  company: string | null;
   unit: string;
   price: number;
   pieces_per_carton: number | null;

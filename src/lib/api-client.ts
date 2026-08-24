@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useAuthStore } from "./auth-store";
+import { BUSINESS } from "./business";
 
 export interface ApiError extends Error {
   code?: string;
@@ -28,7 +29,9 @@ function createCircuitBreaker() {
         if (Date.now() - state.lastFailure > TIMEOUT) {
           state.state = "half-open";
         } else {
-          const error = new Error("Circuit breaker open - service temporarily unavailable") as ApiError;
+          const error = new Error(
+            "Circuit breaker open - service temporarily unavailable",
+          ) as ApiError;
           error.code = "CIRCUIT_OPEN";
           throw error;
         }
@@ -79,7 +82,11 @@ function getAuthHeader(): string | undefined {
   return token ? `Bearer ${token}` : undefined;
 }
 
-export async function apiInvoke<T>(command: string, args?: Record<string, unknown>, options?: { feature?: string }): Promise<T> {
+export async function apiInvoke<T>(
+  command: string,
+  args?: Record<string, unknown>,
+  options?: { feature?: string },
+): Promise<T> {
   const feature = options?.feature || "default";
   const breaker = getCircuitBreaker(feature);
 
@@ -125,7 +132,6 @@ export interface ProductsApi {
   update(id: string, input: Partial<CreateProductInput>): Promise<Product>;
   delete(id: string): Promise<void>;
   import(csvContent: string): Promise<ImportResult>;
-  export(): Promise<Blob>;
 }
 
 export interface CustomersApi {
@@ -142,8 +148,12 @@ export interface MarkPaidInput {
   payment_method: "cash" | "bank" | "credit";
 }
 
+export interface ListInvoicesParams {
+  query?: string;
+}
+
 export interface InvoicesApi {
-  list(): Promise<Invoice[]>;
+  list(params?: ListInvoicesParams): Promise<Invoice[]>;
   get(id: string): Promise<Invoice | null>;
   getWithItems(id: string): Promise<{ invoice: Invoice; items: InvoiceItem[] } | null>;
   create(input: CreateInvoiceInput): Promise<Invoice>;
@@ -201,6 +211,7 @@ export interface Product {
   color: string | null;
   size: string | null;
   finish: string | null;
+  company: string | null;
   unit: string;
   price: number;
   pieces_per_carton: number | null;
@@ -212,18 +223,19 @@ export interface Product {
 
 export interface CreateProductInput {
   name: string;
-  sku?: string;
+  sku?: string | null;
   category: "marble" | "tiles" | "chips" | "sanitary";
   description: string;
-  color?: string;
-  size?: string;
-  finish?: string;
+  color?: string | null;
+  size?: string | null;
+  finish?: string | null;
+  company?: string | null;
   unit: string;
   price: number;
-  pieces_per_carton?: number;
+  pieces_per_carton?: number | null;
   stock_qty: number;
   low_stock_threshold: number;
-  image_url?: string;
+  image_url?: string | null;
   is_published?: boolean;
 }
 
@@ -392,29 +404,32 @@ export interface RegisterInput {
 
 export const api: ApiClient = {
   products: {
-    list: (category) => apiInvoke("list_products", { input: category ? { category } : {} }, { feature: "products" }),
+    list: (category) =>
+      apiInvoke("list_products", { input: category ? { category } : {} }, { feature: "products" }),
     get: (id) => apiInvoke("get_product", { id }, { feature: "products" }),
     create: (input) => apiInvoke("create_product", { input }, { feature: "products" }),
-    update: (id, input) => apiInvoke("update_product", { input: { ...input, id } }, { feature: "products" }),
+    update: (id, input) =>
+      apiInvoke("update_product", { input: { ...input, id } }, { feature: "products" }),
     delete: (id) => apiInvoke("delete_product", { id }, { feature: "products" }),
     import: (csvContent) => apiInvoke("import_products", { csvContent }, { feature: "products" }),
-    export: () => apiInvoke("export_products", {}, { feature: "products" }),
   },
   customers: {
     list: () => apiInvoke("list_customers", {}, { feature: "customers" }),
     get: (id) => apiInvoke("get_customer", { id }, { feature: "customers" }),
     create: (input) => apiInvoke("create_customer", { input }, { feature: "customers" }),
-    update: (id, input) => apiInvoke("update_customer", { input: { ...input, id } }, { feature: "customers" }),
+    update: (id, input) =>
+      apiInvoke("update_customer", { input: { ...input, id } }, { feature: "customers" }),
     delete: (id) => apiInvoke("delete_customer", { id }, { feature: "customers" }),
   },
   invoices: {
-    list: () => apiInvoke("list_invoices", { input: {} }, { feature: "invoices" }),
+    list: (params?: ListInvoicesParams) =>
+      apiInvoke("list_invoices", { input: params ?? {} }, { feature: "invoices" }),
     get: (id) => apiInvoke("get_invoice", { id }, { feature: "invoices" }),
     getWithItems: async (id) => {
       const res = await apiInvoke<[Invoice, InvoiceItem[]] | null>(
         "get_invoice_with_items",
         { id },
-        { feature: "invoices" }
+        { feature: "invoices" },
       );
       if (!res) return null;
       const [invoice, items] = res;
@@ -422,7 +437,19 @@ export const api: ApiClient = {
     },
     create: (input) => apiInvoke("create_invoice", { input }, { feature: "invoices" }),
     markPaid: (input) => apiInvoke("mark_invoice_paid", { input }, { feature: "invoices" }),
-    printReceipt: (id) => apiInvoke("print_receipt", { invoiceId: id }, { feature: "invoices" }),
+    printReceipt: (id) =>
+      apiInvoke(
+        "print_receipt",
+        {
+          invoiceId: id,
+          business: {
+            name: BUSINESS.name,
+            address: BUSINESS.address,
+            phone: BUSINESS.phone,
+          },
+        },
+        { feature: "invoices" },
+      ),
     printInvoicePdf: (id) =>
       apiInvoke<string>("print_invoice_pdf", { invoiceId: id }, { feature: "invoices" }),
   },
@@ -436,7 +463,7 @@ export const api: ApiClient = {
       apiInvoke(
         "get_sales_report",
         { input: { from_date: params.from ?? null, to_date: params.to ?? null } },
-        { feature: "reports" }
+        { feature: "reports" },
       ),
     getInventory: () => apiInvoke("get_inventory_report", {}, { feature: "reports" }),
   },
@@ -446,15 +473,24 @@ export const api: ApiClient = {
     reject: (id) => apiInvoke("reject_cashier", { input: { id } }, { feature: "cashiers" }),
     suspend: (id) => apiInvoke("suspend_cashier", { input: { id } }, { feature: "cashiers" }),
     resetPassword: (id, newPassword) =>
-      apiInvoke("reset_password", { input: { id, new_password: newPassword } }, { feature: "cashiers" }),
+      apiInvoke(
+        "reset_password",
+        { input: { id, new_password: newPassword } },
+        { feature: "cashiers" },
+      ),
   },
   auth: {
-    login: (email, password) => apiInvoke("login", { input: { email, password } }, { feature: "auth" }),
+    login: (email, password) =>
+      apiInvoke("login", { input: { email, password } }, { feature: "auth" }),
     register: (input) => apiInvoke("register", { input }, { feature: "auth" }),
     logout: () => apiInvoke("logout", {}, { feature: "auth" }),
     me: () => apiInvoke("me", {}, { feature: "auth" }),
     checkAdminExists: async () => {
-      const res = await apiInvoke<{ exists: boolean }>("check_admin_exists", {}, { feature: "auth" });
+      const res = await apiInvoke<{ exists: boolean }>(
+        "check_admin_exists",
+        {},
+        { feature: "auth" },
+      );
       return res?.exists ?? false;
     },
   },

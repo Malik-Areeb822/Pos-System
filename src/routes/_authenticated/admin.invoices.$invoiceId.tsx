@@ -1,27 +1,25 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { AdminShell } from "@/components/admin/AdminShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { BUSINESS } from "@/lib/business";
 import { useInvoiceRealtime } from "@/lib/tauri-events";
 import { currency } from "@/features/inventory/api";
-import { useInvoice, useMarkInvoicePaid, usePrintInvoicePdf, type Invoice, type InvoiceItem } from "@/features/invoices/api";
+import { useInvoice, useMarkInvoicePaid, usePrintInvoicePdf, usePrintReceipt, type Invoice, type InvoiceItem } from "@/features/invoices/api";
 import { formatDate } from "@/features/invoices/api";
 
 export const Route = createFileRoute("/_authenticated/admin/invoices/$invoiceId")({
-  validateSearch: (search: Record<string, unknown>): { print?: boolean } =>
-    search['print'] === "1" || search['print'] === true ? { print: true } : {},
   component: InvoiceDetailPage,
 });
 
 function InvoiceDetailPage() {
   const { invoiceId } = Route.useParams();
-  const { print } = Route.useSearch();
   const queryClient = useQueryClient();
   useInvoiceRealtime(invoiceId);
 
@@ -31,16 +29,9 @@ function InvoiceDetailPage() {
   const items = data?.items ?? [];
   const balance = invoice ? Math.max(0, Number(invoice.total) - Number(invoice.amount_paid)) : 0;
 
-  useEffect(() => {
-    if (print && invoice) {
-      const t = setTimeout(() => window.print(), 400);
-      return () => clearTimeout(t);
-    }
-    return;
-  }, [print, invoice]);
-
   const markPaid = useMarkInvoicePaid();
   const printPdf = usePrintInvoicePdf();
+  const printReceipt = usePrintReceipt();
   const [paymentAmount, setPaymentAmount] = useState("");
 
   const recordPayment = useMutation({
@@ -95,8 +86,20 @@ function InvoiceDetailPage() {
               >
                 {printPdf.isPending ? "Generating…" : "Download A4 PDF"}
               </Button>
-              <Button size="sm" variant="brass" onClick={() => window.print()}>
-                Print / Save PDF
+              <Button
+                size="sm"
+                variant="brass"
+                disabled={!invoice || printReceipt.isPending}
+                onClick={() => {
+                  if (!invoice) return;
+                  printReceipt.mutate(invoice.id, {
+                    onSuccess: () => toast.success("Receipt sent to printer"),
+                    onError: (err: Error) =>
+                      toast.error(`Receipt printing failed: ${err.message}`),
+                  });
+                }}
+              >
+                {printReceipt.isPending ? "Printing…" : "Print receipt"}
               </Button>
             </>
           }
@@ -191,12 +194,10 @@ function InvoiceDetailPage() {
             <div className="mt-6 flex flex-wrap items-end gap-3 border-t border-border pt-4 print:hidden">
               <div className="space-y-1">
                 <Label htmlFor="record-payment">Record payment — due {currency(balance)}</Label>
-                <Input
+                <NumberInput
                   id="record-payment"
-                  type="number"
-                  min="0"
+                  min={1}
                   max={balance}
-                  step="0.01"
                   placeholder={String(balance)}
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}

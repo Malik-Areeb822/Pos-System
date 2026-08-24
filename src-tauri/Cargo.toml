@@ -51,6 +51,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rusb = "0.9"
 escpos-rs = "0.4"
 
+# Receipt bitmap rendering (real POS typefaces via GS v 0 raster printing)
+ab_glyph = "0.2"
+
 # CSV import (for product catalog import)
 csv = "1.3"
 

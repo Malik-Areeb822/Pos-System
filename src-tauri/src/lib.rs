@@ -31,7 +31,15 @@ pub fn run() {
             let pool = tauri::async_runtime::block_on(async {
                 crate::database::init_db(app.handle()).await
             })?;
-            app.manage(crate::database::Db::new(pool));
+            app.manage(crate::database::Db::new(pool.clone()));
+
+            // Retention: purge fully-settled sales older than 12 months so the
+            // store stays light over years. Runs in the background; snapshots
+            // the DB first and only notifies the UI when rows were removed.
+            tauri::async_runtime::spawn(crate::services::retention::run_maintenance(
+                app.handle().clone(),
+                pool,
+            ));
             
             // Setup autostart
             crate::autostart::setup_autostart(app.handle())?;

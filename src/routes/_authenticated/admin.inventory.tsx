@@ -8,6 +8,7 @@ import * as XLSX from "xlsx";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -18,7 +19,17 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useRoles } from "@/features/auth/api";
-import { CATEGORIES, currency, type Category, type Product, useProducts, useCreateProduct, useUpdateProduct, useDeleteProduct, useImportProducts, useExportProducts } from "@/features/inventory/api";
+import {
+  CATEGORIES,
+  currency,
+  type Category,
+  type Product,
+  useProducts,
+  useCreateProduct,
+  useUpdateProduct,
+  useDeleteProduct,
+} from "@/features/inventory/api";
+import { saveWorkbook, fileStamp } from "@/lib/file-save";
 
 export const Route = createFileRoute("/_authenticated/admin/inventory")({
   component: InventoryPage,
@@ -31,6 +42,7 @@ type Draft = {
   description: string;
   color: string;
   size: string;
+  company: string;
   unit: string;
   price: string;
   stock_qty: string;
@@ -45,6 +57,7 @@ const emptyDraft: Draft = {
   description: "",
   color: "",
   size: "",
+  company: "",
   unit: "sq ft",
   price: "0",
   stock_qty: "0",
@@ -60,6 +73,7 @@ function toDraft(p: Product): Draft {
     description: p.description ?? "",
     color: p.color ?? "",
     size: p.size ?? "",
+    company: p.company ?? "",
     unit: p.unit,
     price: String(p.price),
     stock_qty: String(p.stock_qty),
@@ -74,6 +88,7 @@ const EXPORT_COLUMNS = [
   "Category",
   "Colour",
   "Size",
+  "Company",
   "Unit",
   "Price",
   "Stock qty",
@@ -91,8 +106,6 @@ function InventoryPage() {
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
-  const importProducts = useImportProducts();
-  const exportProducts = useExportProducts();
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
@@ -110,6 +123,7 @@ function InventoryPage() {
         description: draft.description.trim(),
         color: draft.color.trim() || null,
         size: draft.size.trim() || null,
+        company: draft.category === "sanitary" ? draft.company.trim() || null : null,
         unit: draft.unit.trim() || "unit",
         price: Number(draft.price) || 0,
         stock_qty: Number(draft.stock_qty) || 0,
@@ -154,9 +168,7 @@ function InventoryPage() {
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
       const pick = (row: Record<string, unknown>, ...keys: string[]) => {
         for (const key of keys) {
-          const found = Object.keys(row).find(
-            (k) => k.trim().toLowerCase() === key.toLowerCase(),
-          );
+          const found = Object.keys(row).find((k) => k.trim().toLowerCase() === key.toLowerCase());
           if (found && String(row[found]).trim() !== "") return String(row[found]).trim();
         }
         return "";
@@ -172,6 +184,7 @@ function InventoryPage() {
         const rawCategory = pick(row, "Category").toLowerCase();
         const category = (valid.has(rawCategory as Category) ? rawCategory : "tiles") as Category;
         const perCarton = Number(pick(row, "Tiles per carton", "pieces_per_carton")) || 0;
+        const company = pick(row, "Company");
         const payload = {
           name,
           sku: sku || null,
@@ -179,6 +192,7 @@ function InventoryPage() {
           description: pick(row, "Description"),
           color: pick(row, "Colour", "Color") || null,
           size: pick(row, "Size") || null,
+          company: category === "sanitary" && company ? company : null,
           unit: pick(row, "Unit") || (category === "tiles" ? "tile" : "unit"),
           price: Number(pick(row, "Price")) || 0,
           stock_qty: Number(pick(row, "Stock qty", "Stock")) || 0,
@@ -201,13 +215,56 @@ function InventoryPage() {
     onSuccess: ({ created, updated }) => {
       toast.success(`Import complete — ${created} added, ${updated} updated`);
       queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
-  function exportExcel() {
-    exportProducts.mutate();
-  }
+  const exportRows = useMutation({
+    mutationFn: async () => {
+      // Headers intentionally mirror the importer's accepted aliases so an
+      // exported file round-trips straight back through Import Excel.
+      const data = products.map((p) => ({
+        "Stock code": p.sku ?? "",
+        Name: p.name,
+        Category: p.category,
+        Colour: p.color ?? "",
+        Size: p.size ?? "",
+        Company: p.company ?? "",
+        Unit: p.unit,
+        Price: Number(p.price),
+        "Stock qty": Number(p.stock_qty),
+        "Tiles per carton": p.pieces_per_carton ? Number(p.pieces_per_carton) : "",
+        "Low stock alert": Number(p.low_stock_threshold),
+        Description: p.description ?? "",
+      }));
+      const sheet = XLSX.utils.json_to_sheet(data);
+      sheet["!cols"] = [
+        { wch: 12 },
+        { wch: 32 },
+        { wch: 12 },
+        { wch: 14 },
+        { wch: 12 },
+        { wch: 18 },
+        { wch: 10 },
+        { wch: 12 },
+        { wch: 10 },
+        { wch: 14 },
+        { wch: 12 },
+        { wch: 40 },
+      ];
+      const book = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(book, sheet, "Inventory");
+      const bytes = new Uint8Array(
+        XLSX.write(book, { bookType: "xlsx", type: "array" }) as ArrayBuffer,
+      );
+      return saveWorkbook(`city-tiles-inventory-${fileStamp()}.xlsx`, bytes);
+    },
+    onSuccess: (path) => {
+      if (path) toast.success(`Exported to ${path}`);
+    },
+    onError: (err: Error) => toast.error(`Export failed: ${err.message}`),
+  });
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -216,7 +273,7 @@ function InventoryPage() {
       .filter((p) =>
         !q
           ? true
-          : [p.name, p.sku, p.color, p.size, p.unit, p.description]
+          : [p.name, p.sku, p.color, p.size, p.company, p.unit, p.description]
               .filter(Boolean)
               .some((v) => String(v).toLowerCase().includes(q)),
       );
@@ -245,8 +302,13 @@ function InventoryPage() {
                 e.target.value = "";
               }}
             />
-            <Button size="sm" variant="outline" onClick={exportExcel}>
-              <Download className="size-4" /> Export Excel
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={exportRows.isPending}
+              onClick={() => exportRows.mutate()}
+            >
+              <Download className="size-4" /> {exportRows.isPending ? "Exporting…" : "Export Excel"}
             </Button>
             <Button
               size="sm"
@@ -304,30 +366,40 @@ function InventoryPage() {
                     <Label>Colour</Label>
                     <Input {...field("color")} maxLength={60} />
                   </div>
-<div className="space-y-2">
-                      <Label>Size</Label>
-                      <Input {...field("size")} maxLength={60} />
+                  <div className="space-y-2">
+                    <Label>Size</Label>
+                    <Input {...field("size")} maxLength={60} />
+                  </div>
+                  {draft.category === "sanitary" && (
+                    <div className="space-y-2">
+                      <Label>Company</Label>
+                      <Input
+                        {...field("company")}
+                        maxLength={60}
+                        placeholder="e.g. Master Sanitary"
+                      />
                     </div>
+                  )}
                   <div className="space-y-2">
                     <Label>Unit</Label>
                     <Input {...field("unit")} maxLength={20} />
                   </div>
                   <div className="space-y-2">
                     <Label>Price (PKR)</Label>
-                    <Input type="number" min="0" {...field("price")} />
+                    <NumberInput min={0} {...field("price")} />
                   </div>
                   <div className="space-y-2">
                     <Label>Stock quantity</Label>
-                    <Input type="number" min="0" {...field("stock_qty")} />
+                    <NumberInput min={0} {...field("stock_qty")} />
                   </div>
                   <div className="space-y-2">
                     <Label>Low stock alert at</Label>
-                    <Input type="number" min="0" {...field("low_stock_threshold")} />
+                    <NumberInput min={0} {...field("low_stock_threshold")} />
                   </div>
                   {draft.category === "tiles" && (
                     <div className="space-y-2">
                       <Label>Tiles per carton</Label>
-                      <Input type="number" min="1" {...field("pieces_per_carton")} />
+                      <NumberInput min={1} {...field("pieces_per_carton")} />
                       <p className="text-xs text-muted-foreground">
                         Used at the counter to bill by carton (e.g. 8 tiles per carton).
                       </p>
@@ -356,7 +428,7 @@ function InventoryPage() {
         <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
         <Input
           className="pl-9"
-          placeholder="Search by stock code, name, colour or size"
+          placeholder="Search by stock code, name, colour, size or company"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -409,7 +481,9 @@ function InventoryPage() {
                   <p className="text-xs text-muted-foreground">{p.sku ?? "—"}</p>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
-                  {[p.color, p.size].filter(Boolean).join(" · ") || "—"}
+                  {[p.color, p.size, p.category === "sanitary" ? p.company : null]
+                    .filter(Boolean)
+                    .join(" · ") || "—"}
                 </td>
                 <td className="px-4 py-3 text-right">
                   {currency(p.price)}{" "}
