@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>City Tiles POS — Staff Guide</title>
+<style>
+  :root{
+    --ink:#1f2a30;
+    --ink-soft:#475569;
+    --slate:#334155;
+    --teal:#0f766e;
+    --teal-d:#115e59;
+    --sand:#e7dcc5;
+    --bg:#f7f5f0;
+    --card:#ffffff;
+    --line:#e2e8f0;
+    --amber:#b45309;
+    --amber-bg:#fef3c7;
+    --red:#b91c1c;
+    --red-bg:#fee2e2;
+    --teal-bg:#ccfbf1;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+    color:var(--ink);
+    background:var(--bg);
+    line-height:1.55;
+    font-size:11pt;
+  }
+  @page{ size:A4; margin:16mm 14mm 18mm 14mm; }
+
+  /* ---------- COVER ---------- */
+  .cover{
+    height:263mm; /* ~ A4 printable height */
+    background:
+      repeating-linear-gradient(45deg, rgba(255,255,255,.04) 0 14px, rgba(255,255,255,0) 14px 28px),
+      linear-gradient(160deg,#0f2e2b 0%, #115e59 60%, #0d3b38 100%);
+    color:#eafaf6;
+    border-radius:6px;
+    padding:26mm 18mm;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    position:relative;
+    overflow:hidden;
+  }
+  .cover::before{
+    content:"";
+    position:absolute; right:-40mm; top:-40mm;
+    width:160mm; height:160mm; border-radius:50%;
+    background:radial-gradient(circle at center, rgba(231,220,197,.18), rgba(231,220,197,0) 70%);
+  }
+  .brand{ display:flex; align-items:center; gap:10px; position:relative; }
+  .logo{
+    width:42px; height:42px; border-radius:8px;
+    background:var(--sand);
+    display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:3px; padding:6px;
+    transform:rotate(0deg);
+  }
+  .logo i{ background:#0f766e; border-radius:2px; display:block; }
+  .logo i:nth-child(2){ background:#115e59; }
+  .logo i:nth-child(3){ background:#0d3b38; }
+  .logo i:nth-child(4){ background:#0f766e; }
+  .brand b{ font-size:15pt; letter-spacing:.5px; }
+  .brand span{ display:block; font-size:9pt; color:#bfe9e1; letter-spacing:2px; text-transform:uppercase; }
+
+  .cover h1{ font-size:34pt; line-height:1.05; margin:0 0 6mm; font-weight:800; letter-spacing:.5px; max-width:150mm;}
+  .cover .sub{ font-size:13pt; color:#cdeee7; max-width:140mm; }
+  .cover .meta{ display:flex; gap:8mm; flex-wrap:wrap; font-size:10pt; color:#bfe9e1; position:relative;}
+  .cover .meta div b{ display:block; color:#fff; font-size:11pt; }
+  .tileband{ display:flex; gap:6px; position:relative; margin-top:6mm; }
+  .tileband i{ width:26px; height:26px; border-radius:4px; background:rgba(231,220,197,.22); }
+
+  /* ---------- CONTENT ---------- */
+  .page{ padding-top:2mm; }
+  .section{ margin-bottom:9mm; }
+  .section-head{ display:flex; align-items:center; gap:10px; border-bottom:2px solid var(--teal); padding-bottom:3mm; margin-bottom:5mm; }
+  .badge{
+    flex:0 0 auto; width:30px; height:30px; border-radius:50%;
+    background:var(--teal); color:#fff; font-weight:700;
+    display:flex; align-items:center; justify-content:center; font-size:12pt;
+  }
+  .section-head h2{ margin:0; font-size:16pt; color:var(--slate); font-weight:700; }
+  .section-head .tag{ margin-left:auto; font-size:8.5pt; text-transform:uppercase; letter-spacing:1.5px; color:var(--teal); font-weight:700; }
+
+  p{ margin:0 0 3mm; }
+  .lead{ color:var(--ink-soft); font-size:10.5pt; }
+
+  ol.steps{ list-style:none; counter-reset:step; margin:0; padding:0; }
+  ol.steps > li{
+    counter-increment:step; position:relative;
+    background:var(--card); border:1px solid var(--line); border-left:4px solid var(--teal);
+    border-radius:8px; padding:3.2mm 4mm 3.2mm 13mm; margin-bottom:3mm;
+  }
+  ol.steps > li::before{
+    content:counter(step); position:absolute; left:3.2mm; top:3.2mm;
+    width:18px; height:18px; border-radius:50%; background:var(--teal); color:#fff;
+    font-size:9pt; font-weight:700; display:flex; align-items:center; justify-content:center;
+  }
+  ol.steps > li b{ color:var(--ink); }
+
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:4mm; }
+  @media print{ .grid2{ grid-template-columns:1fr 1fr; } }
+
+  .callout{ border-radius:8px; padding:3mm 4mm; margin:3mm 0; font-size:10pt; border:1px solid; }
+  .callout.tip{ background:var(--teal-bg); border-color:#99f6e4; color:#134e4a; }
+  .callout.warn{ background:var(--amber-bg); border-color:#fcd34d; color:#78350f; }
+  .callout.imp{ background:var(--red-bg); border-color:#fca5a5; color:#7f1d1d; }
+  .callout b{ display:block; margin-bottom:1mm; text-transform:uppercase; letter-spacing:1px; font-size:8.5pt; }
+
+  table{ width:100%; border-collapse:collapse; margin:3mm 0; font-size:9.5pt; background:var(--card); }
+  thead th{ background:var(--slate); color:#fff; text-align:left; padding:2.4mm 3mm; font-weight:600; }
+  tbody td{ padding:2.4mm 3mm; border-bottom:1px solid var(--line); vertical-align:top; }
+  tbody tr:nth-child(even){ background:#f1f5f9; }
+  .pill{ display:inline-block; background:var(--teal-bg); color:#134e4a; border-radius:20px; padding:0.6mm 2.4mm; font-size:8.5pt; font-weight:600; }
+
+  .kv{ margin:0; }
+  .kv div{ display:flex; gap:6mm; padding:1.6mm 0; border-bottom:1px dashed var(--line); }
+  .kv dt{ flex:0 0 42mm; font-weight:700; color:var(--slate); }
+  .kv dd{ margin:0; flex:1; }
+
+  .footer-note{ font-size:8.5pt; color:var(--ink-soft); margin-top:4mm; text-align:center; }
+  .pagebreak{ page-break-before:always; }
+  .nopb{ page-break-inside:avoid; }
+  ul.clean{ margin:0 0 3mm; padding-left:5mm; }
+  ul.clean li{ margin-bottom:1.6mm; }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<section class="cover">
+  <div class="brand">
+    <div class="logo"><i></i><i></i><i></i><i></i></div>
+    <div><b>City Tiles</b><span>Point of Sale</span></div>
+  </div>
+
+  <div>
+    <h1>Staff Quick&#8209;Start Guide</h1>
+    <div class="sub">Everything you need to open the till, make a sale, take payments, and close the day &mdash; in plain, simple steps.</div>
+  </div>
+
+  <div>
+    <div class="tileband"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="meta" style="margin-top:8mm">
+      <div><b>Version 1.0</b>Document edition</div>
+      <div><b>25 Aug 2026</b>Issued</div>
+      <div><b>AUZ Tech</b>Prepared for</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 1. WELCOME ============ -->
+<div class="page pagebreak">
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">1</div><h2>Welcome &amp; What This Is</h2><div class="tag">Basics</div></div>
+    <p class="lead">City Tiles POS is the shop&rsquo;s billing system. It runs on a Windows computer and is used to:</p>
+    <ul class="clean">
+      <li>Ring up sales and print receipts on the 80&nbsp;mm thermal printer.</li>
+      <li>Take payments &mdash; cash, bank transfer, or on credit (customer account).</li>
+      <li>Keep track of customers, products, and daily reports.</li>
+      <li>Handle returns and record partial payments.</li>
+    </ul>
+    <div class="callout tip nopb"><b>Good to know</b>You do not need to be &ldquo;technical&rdquo; to use this. Follow the steps in order and you&rsquo;ll be fine. When in doubt, ask your manager.</div>
+  </div>
+
+  <!-- 2. FIRST TIME -->
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">2</div><h2>First&#8209;Time Setup (on a new computer)</h2><div class="tag">Install</div></div>
+    <ol class="steps">
+      <li>Run the installer your manager gave you &mdash; <b>City Tiles POS_1.0.0_x64-setup.exe</b> (or the <b>.msi</b> file).</li>
+      <li>Windows may show &ldquo;Windows protected your PC.&rdquo; This is normal for our installer. Click <b>More info</b> &rarr; <b>Run anyway</b>.</li>
+      <li>Follow the prompts. The app opens when finished. <span class="pill">Needs internet once</span> on first launch to set up the browser engine; after that it works fully offline.</li>
+      <li>Sign in with the account your manager created for you.</li>
+    </ol>
+    <div class="callout warn nopb"><b>Heads&#8209;up</b>The &ldquo;Windows protected your PC&rdquo; message is <b>not</b> a virus warning about our software &mdash; it simply means the app is not from a big commercial publisher. &ldquo;Run anyway&rdquo; is safe.</div>
+  </div>
+</div>
+
+<!-- ============ 3. SIGN IN ============ -->
+<div class="page pagebreak">
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">3</div><h2>Signing In</h2><div class="tag">Daily</div></div>
+    <ol class="steps">
+      <li>Open <b>City Tiles POS</b> from the desktop shortcut or Start menu.</li>
+      <li>Type your <b>email</b> and <b>password</b>, then click <b>Sign in</b>.</li>
+      <li><b>Admins</b> land on the dashboard. <b>Cashiers</b> go straight to the sales screen.</li>
+      <li>Very first use of a brand&#8209;new system: the <b>owner</b> creates the first admin account (email + password). After that, staff are added by the admin.</li>
+    </ol>
+    <div class="callout imp nopb"><b>Forgot your password?</b>Ask your admin to reset it &mdash; they use the Cashiers page &rarr; reset password. There is no self&#8209;service reset, by design.</div>
+  </div>
+
+  <!-- 4. MAKE A SALE -->
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">4</div><h2>Making a Sale (your everyday job)</h2><div class="tag">Core</div></div>
+    <ol class="steps">
+      <li>On the <b>POS</b> screen, find the product by searching its name or tapping it in the list.</li>
+      <li>Tap a product to add it to the cart. Use <b>+</b> / <b>&minus;</b> to change the quantity.</li>
+      <li>If the customer has a deal, enter a <b>Discount</b> amount in rupees (Rs.).</li>
+      <li>Choose how they pay: <span class="pill">Cash</span> <span class="pill">Bank</span> <span class="pill">Credit</span>.</li>
+      <li>If you pick <b>Credit</b>, select the <b>customer</b> so the amount is billed to their account.</li>
+      <li>Click <b>Complete Sale</b>.</li>
+      <li>The receipt prints on the 80&nbsp;mm thermal printer &mdash; hand it to the customer.</li>
+    </ol>
+    <div class="callout tip nopb"><b>Payment methods, simply</b><b>Cash</b> = paid now in cash. <b>Bank</b> = paid now by card/bank transfer. <b>Credit</b> = customer pays later (their account is billed).</div>
+  </div>
+</div>
+
+<!-- ============ 5 & 6 ============ -->
+<div class="page pagebreak">
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">5</div><h2>Customer Accounts &amp; Credit Sales</h2><div class="tag">Credit</div></div>
+    <ul class="clean">
+      <li>Credit sales are recorded against a <b>customer</b>, not against cash in hand.</li>
+      <li><b>Always</b> make sure the correct customer is selected before completing a credit sale.</li>
+      <li>Customers and their outstanding balances are managed under <b>Customers</b> (admin) and tracked in <b>Invoices</b>.</li>
+    </ul>
+  </div>
+
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">6</div><h2>Recording Payments &amp; Part Payments</h2><div class="tag">Invoices</div></div>
+    <ol class="steps">
+      <li>Open <b>Invoices</b> to see all sales.</li>
+      <li>Open an unpaid or credit invoice &rarr; <b>Record payment</b>.</li>
+      <li>Enter the amount received and save. You can pay part now and the rest later.</li>
+      <li>When a payment fully clears, click <b>Payment cleared</b> so the record stays tidy.</li>
+    </ol>
+  </div>
+
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">7</div><h2>Returns &amp; Refunds</h2><div class="tag">Returns</div></div>
+    <ol class="steps">
+      <li>Open <b>Returns</b> from the menu.</li>
+      <li>Find the original sale/invoice and process the return.</li>
+      <li>The system handles the refund or credit automatically.</li>
+      <li>Unsure about the refund amount? Ask a manager before confirming.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============ 8 REPORTS / 9 INV ============ -->
+<div class="page pagebreak">
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">8</div><h2>End of Day &mdash; Reports</h2><div class="tag">Admin</div></div>
+    <ol class="steps">
+      <li>Admins: open <b>Reports</b> to see the day&rsquo;s sales.</li>
+      <li>Click <b>Export</b> to save a spreadsheet (CSV) for accounting/records.</li>
+      <li>The report lists: invoice number, date, customer, payment method, subtotal, discount, total, and amount paid.</li>
+    </ol>
+  </div>
+
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">9</div><h2>Inventory &amp; Customers</h2><div class="tag">Admin</div></div>
+    <div class="grid2">
+      <div class="callout tip nopb"><b>Inventory</b>Add or edit products and keep stock counts up to date so the POS shows what&rsquo;s available.</div>
+      <div class="callout tip nopb"><b>Customers</b>Add customer accounts and review balances &mdash; important for credit sales.</div>
+    </div>
+  </div>
+
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">10</div><h2>Managing Staff</h2><div class="tag">Admin</div></div>
+    <p>Use the <b>Cashiers</b> page to: approve new cashier accounts, suspend a cashier, or <b>reset a cashier&rsquo;s password</b>.</p>
+  </div>
+
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">11</div><h2>Backups &amp; Your Data</h2><div class="tag">Safety</div></div>
+    <ul class="clean">
+      <li>All data lives on this computer in the <b>CityTiles</b> data folder &mdash; the system keeps automatic backups.</li>
+      <li><b>Do not delete</b> that folder.</li>
+      <li>Admins can export data as an extra safety copy; keep the export somewhere safe.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ 12 TROUBLESHOOTING ============ -->
+<div class="page pagebreak">
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">12</div><h2>Troubleshooting</h2><div class="tag">Help</div></div>
+    <table>
+      <thead><tr><th style="width:42%">Problem</th><th>What to do</th></tr></thead>
+      <tbody>
+        <tr><td>&ldquo;Windows protected your PC&rdquo;</td><td>That&rsquo;s SmartScreen. Click <b>More info</b> &rarr; <b>Run anyway</b>. Safe to proceed.</td></tr>
+        <tr><td>App won&rsquo;t open after install</td><td>Restart the computer. Make sure you allowed the install, and that it finished. Try opening from the Start menu.</td></tr>
+        <tr><td>Printer is blank / nothing prints</td><td>Check the 80&nbsp;mm roll is loaded and not jammed, the printer is powered and connected (USB), and it is set as the default thermal printer.</td></tr>
+        <tr><td>Forgot password</td><td>Ask your admin to reset it (Cashiers page &rarr; reset password).</td></tr>
+        <tr><td>Screen frozen / not responding</td><td>Close and reopen the app. If it happens often, tell your admin.</td></tr>
+        <tr><td>&ldquo;No internet&rdquo; message</td><td>Only the very first launch needs internet once. After that it works offline.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">13</div><h2>Good Habits</h2><div class="tag">Tips</div></div>
+    <ul class="clean">
+      <li>Always check the <b>customer name</b> on credit sales before completing.</li>
+      <li>Double&#8209;check the <b>discount</b> before you hit Complete Sale.</li>
+      <li><b>Log out</b> at the end of your shift.</li>
+      <li>Don&rsquo;t switch off the computer while a receipt is printing.</li>
+    </ul>
+  </div>
+
+  <div class="section nopb">
+    <div class="section-head"><div class="badge">14</div><h2>Need More Help?</h2><div class="tag">Support</div></div>
+    <dl class="kv">
+      <div><dt>First contact</dt><dd>Your store manager or owner.</dd></div>
+      <div><dt>Technical support</dt><dd>AUZ Tech &mdash; provided setup &amp; installer.</dd></div>
+      <div><dt>Tip</dt><dd>Note the date/time and what you were doing when something went wrong &mdash; it helps us fix it fast.</dd></div>
+    </dl>
+    <p class="footer-note">City Tiles POS &middot; Staff Quick&#8209;Start Guide &middot; Version 1.0 &middot; Issued 25 Aug 2026</p>
+  </div>
+</div>
+
+</body>
+</html>

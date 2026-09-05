@@ -1,10 +1,241 @@
 # Handoff Document — Stone Flow POS Offline Migration
 
+> ⚠️ **MANDATORY RULE FOR ALL AGENTS & DEVELOPERS**: 
+> **You MUST read [PROJECT_ARCHITECTURE.md](file:///C:/Users/Malik%20Areeb%20Ahmed/OneDrive/Desktop/stone-flow-pos-main/PROJECT_ARCHITECTURE.md) before making ANY code changes, fixes, refactors, or feature upgrades.** It maps out the complete system layout, IPC bridges, database schemas, and critical component dependencies to prevent breaking connected features.
+
 > **Goal**: Convert to single executable, auto-start, fully offline, loosely coupled
 > **Constraint**: Zero functional changes to core POS behavior
-> **Status**: 🟢 ~90% complete — receipts raster-print, exports/imports fixed, full-history invoice search live, 12-month auto-retention keeping the store lean. **Working tree has uncommitted session changes (see below)**
-> **Date**: 2026-08-24
-> **Phase**: Phase B verification (post-stabilization) → Phase C release pending
+> **Status**: 🟢 FREEZE RESOLVED + INSTALLERS REBUILT & RE-SIGNED (2026-08-25 late night) — React 18.3.1 pin passed full gauntlet incl. owner's manual login + sample sale; E/A/D mitigations reverted; fresh MSI + NSIS built via `cargo tauri build`, ship-gate passed on their own exe (serving/storm/typing/CPU), both signed `CN=AUZ Tech` + RFC3161 timestamp (valid to 2036). Remaining: clean-machine install test → full manual matrix → staff docs.
+> **Date**: 2026-08-25
+> **Phase**: Phase C release
+
+---
+
+## 🔥 Session 2026-08-25: Release-build signin freeze — RESOLVED (Option B)
+
+**Status**: ✅ **FIXED & VERIFIED.** Root cause = react-dom v19 production event-dispatch
+machinery (`findInstanceBlockingEvent` + Suspense-marker walkers) entering an infinite
+synchronous loop when input events land during early commit windows. Fix = pin
+`react`/`react-dom` to **18.3.1 exact** — different dispatch generation, trap does not exist.
+
+### ✅ Option B execution log (final, 2026-08-25 late evening)
+
+| Step | Result |
+|------|--------|
+| Pin react/react-dom `18.3.1` exact; npm install | ✓ versions confirmed in node_modules |
+| `npx tsc --noEmit` vs baseline | ✓ identical 20 lines |
+| SPA rebuild | ✓ `index-MycxdKGo.js` 869 KB (React 18 verified inside: "18.3.1" ×4, "19.x" ×0) |
+| Exe rebuild `--features custom-protocol` | ✓ serving gate: `http://tauri.localhost/` via CDP |
+| Verification on E/A/D-still-active build | storm 8 s ×100 rounds ALIVE; typing exact; ×5 boot+immediate-storm all clean; owner manual login + sample sale OK |
+| **Mitigation revert** (E deferred-mount, A delayed-Toaster, D one-shot adminExists) → back to committed originals | rationale below |
+| Re-verification of reverted final build | storm 75/63 rounds ALIVE; typing `owner@check.com`/`final@check.pk` exact; CPU clean; tsc still 20-line baseline |
+
+**Why E/A/D were reverted (do not re-add):**
+- All three proved useless against the freeze (it reproduced with each and with all combined)
+— React 18 alone is the fix; the hacks only added startup delay and indirection.
+- **D contained a real latent bug**: module-level cache never invalidates and register's
+`invalidateQueries(["admin-exists"])` became a no-op → after creating the first admin and
+logging out, the signin page would show "first-time admin setup" instead of sign-in.
+Reverted to the battle-tested React Query hook.
+
+**Gotcha hit during rebuild:** cargo `os error 5` because the running exe locked the file —
+kill the app before `cargo build --release`. Also: first launch after a rebuild can exceed
+15 s to expose its CDP page target (cold start); poll longer before declaring failure.
+
+**Ship sequence from here:** `cargo tauri build` → signtool re-sign both bundles → verify
+signer/timestamp → full manual regression matrix → clean-machine install test → staff docs.
+
+---
+
+### Evening continuation — every fix tried, in order (ALL insufficient for the freeze)
+
+| # | Attempt | Exact change | Files touched | Verification performed | Outcome |
+|---|---------|--------------|---------------|------------------------|---------|
+| 1 | **F1 — React downgrade within v19** | `"react": "19.1.9"`, `"react-dom": "19.1.9"` exact pins (no caret) | `package.json`, `package-lock.json` | `npm install` clean; installed versions confirmed 19.1.9; `npx tsc --noEmit` = baseline only (baseline saved `%TEMP%\opencode\tsc-baseline.txt`, 20 lines); bundle hash `CNK14Fo3`→`POTYyE8N` (945→932 KB) | ❌ Still froze on regression run ("typing email"). An earlier "5/5 clean" verdict was RETRACTED — see measurement-traps section |
+| 2 | **E — deferred mount** | Render `<App/>` only after `window.load` + double-rAF + 300 ms settle, so WebView2's boot-time native focus storm fires against an empty root | `src/tauri-entry.tsx` (new SPA entry file) | Code on disk verified; bundle rebuilt `index-CANUfJLx.js` | ❌ Freeze reproduced with E active |
+| 3 | **D — kill guaranteed late-boot commit window** | `useCheckAdminExists()` rewritten from React Query (`staleTime:0, refetchOnMount:"always"` — fired IPC + re-render on EVERY signin mount) to module-cached one-shot fetch (`useState`+`useEffect`, single IPC per app process) | `src/features/auth/api.ts`; side effect: register's `invalidateQueries(["admin-exists"])` is now a harmless no-op | tsc diff vs baseline: same error line-shifted only, 0 new | ❌ Freeze reproduced with D active (user froze typing email seconds after launch ⇒ commit windows persisted past boot regardless) |
+| 4 | **A — delayed Toaster** | sonner `<Toaster>` now mounts via `DelayedToaster` after 1.5 s instead of initial commit (toasts fired in first 1.5 s are dropped — acceptable) | `src/main.tsx` | tsc diff clean; bundle rebuilt | ❌ Freeze reproduced with A active |
+
+Combined E+D+A+19.1.9 build: **still froze on first input**, renderer pegged
+**+5.23 s CPU over 5 s wall (~105 % of one core)** while host sat idle at 0.28 s —
+identical signature to original diagnosis.
+
+### 🚨 Infrastructure bug discovered along the way — every installer ever built was a dev-mode shell (FIXED)
+
+While verifying attempt #2 the exe showed `ERR_CONNECTION_REFUSED` for localhost.
+Investigation chain (all source-verified):
+
+1. Nothing listened on :8080 (netstat); vite preview lives on :4173.
+2. Tauri source: `tauri-codegen-2.6.3/src/context.rs:155` → `dev: cfg!(not(feature = "custom-protocol"))`;
+   `context.rs:178` → when `dev && dev_url.is_some()`: **zero assets embedded**, exe loads `build.devUrl`
+   (`http://localhost:8080`) at runtime.
+3. The `cfg!(feature=…)` inside injected context code evaluates against **THIS crate's** features — not the
+   `tauri` dependency's. This project's `Cargo.toml` never had the official template's feature declaration,
+   so plain release builds were ALWAYS dev-mode shells.
+4. **Implication**: the signed Aug-24 v1.0.0 MSI/NSIS were also dev-mode shells — they could only ever work
+   beside a live dev server on :8080 and would fail identically on any clean machine. The clean-install test
+   had never been run, which is why this survived unnoticed until tonight.
+
+**Fix applied** (canonical template block):
+```toml
+[features]
+default = []
+custom-protocol = ["tauri/custom-protocol"]
+```
+Production builds must now be either `cargo tauri build` or
+`cargo build --release --features custom-protocol`. Serving mode verified end-to-end via CDP:
+page URL changed from `http://localhost:8080/` → **`http://tauri.localhost/`** ✓, exe size 23.1→24.2 MB
+(embedded assets). A dead-end intermediate attempt (`[target."cfg(not(debug_assertions))".dependencies]
+tauri = { features = ["custom-protocol"] }`) flipped only the dependency's feature, not this crate's —
+removed again in favor of the `[features]` block above.
+
+### Measurement traps that produced false verdicts today (do not repeat)
+
+- **"5/5 clean" retraction**: the round-1 verdict ran against a dev-shell exe whose page was served by
+  whatever answered on :8080 at that moment — it validated nothing about the production path. Any verdict
+  requires the CDP serving check below.
+- **Byte-gate flaw**: scanning the exe for plaintext asset-hash strings proves nothing — embedded assets are
+  compressed. The reliable gate is launching with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223`
+  and reading `/json` from :9223: `http://tauri.localhost/…` = production ✓, `http://localhost:8080/…` = broken ✗.
+- **CDP harness artifacts**: enabling `Debugger.enable` *before* navigation reported wedges on bundles known
+  good afterward; blind-pause capture also proved unreliable once wedged (`Runtime.enable` times out; pause
+  events never surfaced within 15 s windows). CDP alone must never gate a ship decision — human typing on the
+  real exe is the arbiter.
+- **OneDrive sync lag**: immediately after an edit, shell tools briefly saw stale file content (manifest edit
+  invisible to `Select-String`/cargo while `Read` saw it). If cargo no-ops right after an edit, re-check the
+  file from the same shell before theorizing.
+
+### Current exact file state (everything UNCOMMITTED)
+
+| File | State |
+|------|-------|
+| `package.json`, `package-lock.json` | react/react-dom pinned `"18.3.1"` exact (Option B fix — **do not bump to 19 without re-running the signin storm gauntlet**) |
+| `src/tauri-entry.tsx` | restored to plain immediate `createRoot` mount (E reverted) |
+| `src/main.tsx` | restored to committed HEAD — direct `<Toaster>` (A reverted) |
+| `src/features/auth/api.ts` | restored to committed HEAD — React Query `useCheckAdminExists` (D reverted, incl. its latent logout-mode bug) |
+| `src-tauri/Cargo.toml` | `[features] custom-protocol = ["tauri/custom-protocol"]` added |
+| `src/routeTree.gen.ts` | regenerated by builds |
+| `src-tauri/tauri.conf.json`, `index.html`, `vite.config.spa.ts`, `dist-spa/` | SPA pipeline (from previous session, uncommitted; `dist-spa` is build output — add to `.gitignore` when committing) |
+| `HANDOFF.md` | this document (uncommitted by owner choice, standing rule) |
+| `dist-spa/assets/index-MycxdKGo.js` | current fixed bundle (React 18.3.1) |
+
+Tooling left in `%TEMP%\opencode\`: `cdp.mjs`, `cdp-profiler.mjs`, `cdp-pause.mjs`, `cdp-hunt.mjs` (original
+session), `cdp-hunt2.mjs` (injected-click hunt — keep for Option A), `tsc-baseline.txt`. A vite preview server
+(node PID ~13688) may still be listening on :4173 — kill freely.
+
+### ⛔ Quarantine — LIFTED 2026-08-25 late night
+
+The old freeze-capable installers were **replaced** by a fresh `cargo tauri build` on the
+React 18.3.1 source: both bundles rebuilt, ship-gate passed on the freshly built exe
+(serving = `tauri.localhost`, 64-round click storm ALIVE, exact typing, CPU clean), then:
+
+| Artifact | Signed | Signer | Timestamp |
+|----------|--------|--------|-----------|
+| `bundle/msi/City Tiles POS_1.0.0_x64_en-US.msi` (10.3 MB) | ✓ signtool sha256 | CN=AUZ Tech | RFC3161 DigiCert, valid to 2036-09-04 |
+| `bundle/nsis/City Tiles POS_1.0.0_x64-setup.exe` (6.7 MB) | ✓ signtool sha256 | CN=AUZ Tech | RFC3161 DigiCert, valid to 2036-09-04 |
+
+`Get-AuthenticodeSignature` shows Status=UnknownError on self-signed roots — expected,
+same as the Aug-24 signing; signer identity + timestamp are authoritative.
+
+**Before distributing:** run the clean-machine install test (install → login → one sale →
+uninstall/reinstall keeps DB) and the full manual regression matrix below.
+
+### Next-step decision point (where we paused)
+
+Two options were on the table when the owner paused:
+
+| | Option A — surgical bisect | Option B — React 18.3.1 |
+|---|---|---|
+| Move | Strip signin route to bare `<input>`; rebuild + type-test; re-add components (Input→Label→Button→router extras) each round until wedge appears | Pin react/react-dom `18.3.1` — different dispatch machinery sidesteps the defect entirely |
+| Cost | 3–4 rounds × ~10 min ≈ 40 min | One round ≈ 15 min |
+| Risk surface | Precise culprit named; minimal final diff | Peer ranges verified compatible (`"^16.8 \|\| ^17 \|\| ^18 \|\| ^19"` seen in lockfile for Radix/TanStack packages); full manual matrix mandatory anyway |
+
+Recommendation recorded at pause time: **Option B first**, Option A as fallback if 18 shows any regression.
+Either way the ship sequence afterwards is identical: rebuild → 10-launch rapid type-test (click email ≤1 s
+after window) → `cargo tauri build` → re-sign both installers → full manual matrix → staff docs.
+
+### Root cause
+
+**React 19.2.8 production bundle enters an infinite synchronous loop inside
+`react-dom`'s event-dispatch machinery (`findInstanceBlockingEvent` /
+Suspense-boundary comment-marker walkers) when a pointer/focus/input event lands
+during the initial render window of the signin page.**
+
+Evidence chain (all captured live via Chrome DevTools Protocol):
+
+1. Frozen app: renderer `msedgewebview2.exe` pegged ~92% CPU with **zero**
+   interaction; host `city-tiles-pos.exe` idle; browser-process CDP responds,
+   page/renderer CDP never answers ⇒ renderer JS thread wedged, Rust healthy.
+2. Same `dist-spa` bundle served by `vite preview` in plain Edge reproduces:
+   renderer pegged >100% CPU, `Runtime.evaluate` never returns.
+3. `Debugger.pause` interrupt (works mid-loop) captured live stacks, repeatedly:
+   `#0 vf (Suspense `$`/`$!` marker sibling-walker)` ← `lt` ← `Ad
+   (findInstanceBlockingEvent, `a:for(;;)` fiber walk)` ← `_p/hp (dispatch)`.
+   Source snippets confirm react-dom internals verbatim.
+4. Non-deterministic per load in Edge (only wedges when an event arrives in the
+   vulnerable window); deterministic in-app because window creation fires a
+   native focus event into the page at boot — the user's click just hits the
+   same trap later. Explains "freezes when I click the input".
+5. App code exonerated: signin page is plain controlled inputs;
+   grep found zero `while`/busy patterns; api-client circuit breaker is async-only;
+   lovable-error-reporting is inert outside the editor.
+
+Dev never reproduced because `cargo tauri dev` serves the TanStack Start
+pipeline + dev React — the shipped SPA bundle path was never exercised before.
+
+### Fix plan (Phase B) — F1 tried & INSUFFICIENT; decision pending (A-surgical-bisect vs B-React-18, see "Next-step decision point")
+
+| # | Option | Expected efficacy | System-wide implications |
+|---|--------|-------------------|--------------------------|
+| F1 | ~~Pin `react`/`react-dom` to **19.1.9**~~ **TRIED 2026-08-25 — INSUFFICIENT** (see evening log) | Expected High; actual: race persists on 19.1.9 | API-compatible downgrade applied cleanly; freeze reproduced |
+| F2 | If F1 still wedges: deterministic repro harness (synthetic `Input.dispatchMouseEvent` during load ×N) then bisect trigger surface (Toaster/sonner, `scrollRestoration`, router preload) | Medium | Each candidate is small frontend change; same regression cost per iteration |
+| F3 | Last resort: React major downgrade to 18.3.x | Highest safety margin | ❌ Avoid unless forced — Radix v-latest + TanStack packages assume React 19; large blast radius |
+
+Rejected: global `stopPropagation` shims / disabling events (breaks Radix menus),
+CSP/GPU/IME mitigations (ruled out by evidence).
+
+### Verification protocol after any fix (mandatory)
+
+1. Automated wedge hunt: serve built bundle via `npx vite preview --config
+   vite.config.spa.ts`, attach CDP, load ≥10 times injecting focus/click during
+   the first seconds — require 0 wedges (harness scripts kept in
+   `%TEMP%\opencode\cdp-hunt.mjs`; pattern documented here).
+2. Built-exe smoke gate: run release exe, type through signin, login, POS smoke.
+3. Full manual regression matrix (below) — any dependency bump invalidates it.
+4. Rebuild installers (`cargo tauri build`) + re-sign (signtool, AUZ Tech cert);
+   re-run clean-machine install test.
+
+### Original diagnostic log (kept for the record)
+
+Symptom: raw release exe renders signin; clicking any input freezes webview
+content instantly; native chrome (drag/close) stays responsive ⇒ host + tao
+event loop alive; freeze confined to WebView2 content/input path.
+
+Context: installer fix (uncommitted) swapped bundled frontend pipeline —
+`tauri.conf.json` build → `npx vite build --config vite.config.spa.ts` →
+`dist-spa/`, mounted by new `src/tauri-entry.tsx`. Dev serves a different
+pipeline (`vite.config.ts` / TanStack Start) — shipped JS bundle had never been
+smoke-tested interactively.
+
+Hypotheses investigated: H1 IME/TSF deadlock — DISPROVEN (wedges in Edge with
+EN-US layout, no IME involvement); H2 production-bundle JS storm — CONFIRMED
+(above); H3 GPU compositor — DISPROVEN (compositor paints fine during drag;
+loop is main-thread JS); H4 profile corruption/AV — DISPROVEN (fresh Edge
+profile wedges identically).
+
+Environment facts gathered: WebView2 Runtime 151.0.4129.107 (current); machine
+has ur-PK phonetic TIP alongside EN-US (irrelevant per H1 disproval); UDF at
+`%LOCALAPPDATA%\com.citytiles.pos` (standard, not OneDrive-synced); no hang/
+crash reports in Event Log (host never hangs — consistent).
+
+### Guardrails
+
+- If Tauri `devtools` feature is enabled temporarily for debugging → **strip
+  before building the shipping installer** (console exposes privileged invoke).
+- New mandatory gate after every `cargo tauri build`: run the built exe and type
+  through signin. Dev/prod pipelines differ; dev-green ≠ ship-safe.
+- After the fix lands: full manual matrix + verification protocol above +
+  root-cause note appended here.
 
 ---
 
@@ -200,10 +431,47 @@ Git repo initialized locally this session (no remote yet as of last update).
 | Task | Status |
 |------|--------|
 | Verify autostart registry entry + single-instance focus on second launch | Pending test |
-| Clean Windows machine install test | Pending |
+| Clean Windows machine install test | Installer ready (see Release artifacts below) |
 | Thermal printer (80mm) live test of **raster** receipt output | Printer on-site; text path verified working via spooler RAW; new raster layout (fonts/margins/spacing) needs one paper test — tune constants in `receipt_bitmap.rs` if taste off |
-| `cargo tauri build` MSI/NSIS with self-signed cert ("AUZ Tech") | Pending |
+| `cargo tauri build` MSI/NSIS with self-signed cert ("AUZ Tech") | ✅ DONE 2026-08-24 — built + signed + timestamped |
 | Staff quick-start documentation | Pending |
+
+---
+
+## 📦 Phase C execution plan (agreed 2026-08-24)
+
+1. ✅ **DONE** — Self-signed code-signing certificate `CN=AUZ Tech` created in `Cert:\CurrentUser\My`
+   (thumbprint `FEC9024DFACAA95FCC92B710001378EA4170E6E7`, valid 5 years). Backup exported to
+   `%PROGRAMDATA%\CityTiles\cert-backup\AUZTech.pfx` (password owner-chosen, NOT stored on disk).
+2. ✅ **DONE** — `cargo tauri build`: both bundles produced under
+   `src-tauri/target/release/bundle/`.
+3. ✅ **DONE** — Both installers signed via signtool (`SHA-256`, DigiCert RFC3161 timestamp so
+   signatures outlive the cert): verified embedded signer `CN=AUZ Tech`. Trust-chain errors from
+   `signtool verify /pa` / `Get-AuthenticodeSignature` are expected for a self-signed root.
+4. ⏳ **Owner manual tests** (checklists above): thermal paper test (+ taste tuning of layout
+   constants in `receipt_bitmap.rs` per feedback), autostart + single-instance, clean-machine
+   install from the fresh installer, full regression matrix incl. the search & retention items.
+5. ⏳ **Staff quick-start documentation** — written last so it reflects the final receipt layout.
+
+### Release artifacts (2026-08-24, v1.0.0)
+
+| File | Location |
+|------|----------|
+| MSI | `src-tauri/target/release/bundle/msi/City Tiles POS_1.0.0_x64_en-US.msi` |
+| NSIS setup | `src-tauri/target/release/bundle/nsis/City Tiles POS_1.0.0_x64-setup.exe` |
+
+Known caveats: SmartScreen still warns customers on self-signed certs (accepted, internal use);
+timestamping means no expiry warnings later.
+
+⚠️ HANDOFF.md itself remains uncommitted by owner choice; all code was committed 2026-08-24
+(squashed "Initial commit" e718245).
+
+### Installer & client-update facts (confirmed 2026-08-24)
+
+- **Fully local runtime**: the frontend bundle is embedded inside the binary; SQLite is statically compiled via sqlx; receipt fonts embedded via `include_bytes!`. Client machines need no Node/Vite/cargo/dev tools — those exist only where installers are built. Sole runtime dependency is WebView2 (preinstalled on Win10/11; the Tauri MSI/NSIS bootstrapper auto-installs it if missing — one-time internet only in that edge case). Fully offline after install.
+- **Update procedure (manual; no auto-updater configured)**: bump `version` in `tauri.conf.json` + `Cargo.toml` → `cargo tauri build` on the dev PC → transfer installer → run on the client machine; it upgrades in place. All state that matters — DB, `jwt.key`, backups — lives in `%PROGRAMDATA%\CityTiles\`, outside the install folder, and survives every update untouched. Pending migrations auto-apply on first launch after an update (the immutable-migrations rule exists precisely to keep this safe across installed clients). Recommended ritual each update: Settings → Create backup first. Future option if push-updates are ever wanted: `tauri-plugin-updater` with a signed manifest URL.
+
+---
 
 ### Manual regression matrix after CLEANUP_PLAN execution (GUI required)
 
@@ -278,6 +546,7 @@ remain unused by the UI; these semantic gaps are recorded so nobody "fixes" them
 
 | Decision | Value |
 |----------|-------|
+| Architecture Plan | **Mandatory read of `PROJECT_ARCHITECTURE.md` before any changes/fixes** — maps full IPC topology, SQLite schemas, receipt pipelines, and React 18.3.1 pin to prevent breaking connected components (2026-08-29) |
 | Database | Single SQLite at `%PROGRAMDATA%\CityTiles\citytiles.db` via sqlx (plugin-sql removed) |
 | Payment rule | Invoice number tracks dues universally; customer balance mirrors any attached-customer due |
 | Code signing | Self-signed, publisher "AUZ Tech" |
@@ -290,6 +559,7 @@ remain unused by the UI; these semantic gaps are recorded so nobody "fixes" them
 | Public `/website/*` routes | **Deleted from app** (2026-08-23): routes, SiteShell/InquiryForm, Supabase dep removed |
 | JWT secret | **Per-install random key file** `%PROGRAMDATA%\CityTiles\jwt.key`; env var wins; hardcoded fallback removed (2026-08-23) |
 | Money unit | **Whole rupees are canonical** everywhere incl. PDF invoices — no paise conversion anywhere (2026-08-23) |
+| React version | **18.3.1 pinned (exact)** — react-dom 19 production builds wedge the signin page in an infinite event-dispatch loop in this app shape; ANY future React upgrade must re-pass the signin storm gauntlet + built-exe type-test first (2026-08-25) |
 | Invoice history window | **Recent-50 default + full-history search** (no pagination): list pages show newest 50; Invoices page search hits all history server-side, capped at 200 results (`SEARCH_CAP`) (2026-08-24) |
 | Sales retention | **Auto-purge settled invoices older than 12 months** on every app launch and after backup restore; unpaid/credit invoices are exempt until fully settled; a `VACUUM INTO` snapshot is mandatory before any delete — snapshot failure aborts the purge (2026-08-24) |
 | Report types | **Type-truth alignment done** — TS mirrors Rust payloads; UI computes client-side (2026-08-23) |

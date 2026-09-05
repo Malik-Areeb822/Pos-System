@@ -68,3 +68,13 @@ windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+# Production-build switch (official Tauri template pattern). generate_context!
+# injects cfg!(feature = "custom-protocol") into THIS crate — without this
+# declared feature every release binary stayed in dev mode and loaded devUrl
+# ("localhost refused to connect"). Build releases via `cargo tauri build`
+# (passes this flag automatically) or `cargo build --release --features custom-protocol`.
+# See HANDOFF.md 2026-08-25 session.
+[features]
+default = []
+custom-protocol = ["tauri/custom-protocol"]

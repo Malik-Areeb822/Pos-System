@@ -4,10 +4,10 @@
   "version": "1.0.0",
   "identifier": "com.citytiles.pos",
   "build": {
-    "frontendDist": "../dist",
+    "frontendDist": "../dist-spa",
     "devUrl": "http://localhost:8080",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npx vite build --config vite.config.spa.ts"
   },
   "app": {
     "windows": [
