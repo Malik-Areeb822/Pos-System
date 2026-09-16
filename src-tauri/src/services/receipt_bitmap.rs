@@ -273,10 +273,10 @@ fn price(rupees: i64) -> String {
     format!("PKR {}", rupees)
 }
 
-/// ISO-8601 stored timestamp -> "YYYY-MM-DD HH:MM".
+/// ISO-8601 stored timestamp -> local "YYYY-MM-DD HH:MM AM/PM".
 fn timestamp(created_at: &str) -> String {
     chrono::DateTime::parse_from_rfc3339(created_at)
-        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+        .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %I:%M %p").to_string())
         .unwrap_or_else(|_| created_at.split('T').next().unwrap_or(created_at).to_string())
 }
 
@@ -326,6 +326,16 @@ pub fn render_receipt(
             &format!("@ {} / {}", price(item.unit_price), item.unit),
             56.0,
         );
+        if let Some(total_area) = item.total_area {
+            if total_area > 0.0 {
+                draw_left(
+                    &mut c,
+                    &TextStyle { font: &fonts.karla_bold, size: 25.0, leading: 8.0 },
+                    &format!("Area: {:.3} sqm", total_area),
+                    56.0,
+                );
+            }
+        }
         c.push_blank(6);
     }
     c.push_blank(6);
@@ -366,7 +376,8 @@ pub fn render_receipt(
     // --- Footer -----------------------------------------------------------
     c.push_blank(20);
     draw_centered(&mut c, &TextStyle { font: &fonts.karla_regular, size: 28.0, leading: 12.0 }, "Thank you!");
-    draw_centered(&mut c, &small, "Developed by AUZ Tech");
+    draw_centered(&mut c, &small, "Developed by AZ Solutions");
+    draw_centered(&mut c, &TextStyle { font: &fonts.karla_regular, size: 22.0, leading: 10.0 }, "03311203090");
 
     // Symmetric bottom margin (mirrors MARGIN_Y_ROWS at the top).
     c.push_blank(MARGIN_Y_ROWS);
@@ -473,6 +484,7 @@ mod tests {
             unit: "sqft".into(),
             unit_price: 2250,
             line_total: 4500,
+            total_area: None,
             created_at: String::new(),
         }];
         (inv, items)

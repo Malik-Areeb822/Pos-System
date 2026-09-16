@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../dist-spa",
     "devUrl": "http://localhost:8080",
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npx vite --config vite.config.spa.ts --port 8080",
     "beforeBuildCommand": "npx vite build --config vite.config.spa.ts"
   },
   "app": {

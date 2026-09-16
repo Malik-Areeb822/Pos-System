@@ -19,6 +19,7 @@ pub struct Product {
     pub unit: String,
     pub price: i64,
     pub pieces_per_carton: Option<i64>,
+    pub area_per_tile: Option<f64>,
     pub stock_qty: i64,
     pub low_stock_threshold: i64,
     pub image_url: Option<String>,
@@ -40,6 +41,7 @@ pub struct CreateProductInput {
     pub unit: String,
     pub price: i64,
     pub pieces_per_carton: Option<i64>,
+    pub area_per_tile: Option<f64>,
     pub stock_qty: i64,
     pub low_stock_threshold: i64,
     pub image_url: Option<String>,
@@ -58,7 +60,7 @@ impl ProductRepository {
     pub async fn list(&self) -> Result<Vec<Product>, AppError> {
         let products = sqlx::query_as_unchecked!(
             Product,
-            r#"SELECT id, name, sku, category, description, color, size, finish, company, unit, price, pieces_per_carton, stock_qty, low_stock_threshold, image_url, is_published, created_at, updated_at FROM products ORDER BY name"#
+            r#"SELECT id, name, sku, category, description, color, size, finish, company, unit, price, pieces_per_carton, area_per_tile, stock_qty, low_stock_threshold, image_url, is_published, created_at, updated_at FROM products ORDER BY name"#
         )
         .fetch_all(&self.pool)
         .await?;
@@ -68,7 +70,7 @@ impl ProductRepository {
     pub async fn get(&self, id: &str) -> Result<Option<Product>, AppError> {
         let product = sqlx::query_as_unchecked!(
             Product,
-            r#"SELECT id, name, sku, category, description, color, size, finish, company, unit, price, pieces_per_carton, stock_qty, low_stock_threshold, image_url, is_published, created_at, updated_at FROM products WHERE id = ?"#,
+            r#"SELECT id, name, sku, category, description, color, size, finish, company, unit, price, pieces_per_carton, area_per_tile, stock_qty, low_stock_threshold, image_url, is_published, created_at, updated_at FROM products WHERE id = ?"#,
             id
         )
         .fetch_optional(&self.pool)
@@ -82,10 +84,10 @@ impl ProductRepository {
         let description = input.description.unwrap_or_default();
 
         sqlx::query!(
-            r#"INSERT INTO products (id, name, sku, category, description, color, size, finish, company, unit, price, pieces_per_carton, stock_qty, low_stock_threshold, image_url, is_published, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+            r#"INSERT INTO products (id, name, sku, category, description, color, size, finish, company, unit, price, pieces_per_carton, area_per_tile, stock_qty, low_stock_threshold, image_url, is_published, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
             id, input.name, input.sku, input.category, description,
-            input.color, input.size, input.finish, input.company, input.unit, input.price, input.pieces_per_carton,
+            input.color, input.size, input.finish, input.company, input.unit, input.price, input.pieces_per_carton, input.area_per_tile,
             input.stock_qty, input.low_stock_threshold, input.image_url, input.is_published, now, now
         )
         .execute(&self.pool)
@@ -99,9 +101,9 @@ impl ProductRepository {
         let description = input.description.unwrap_or_default();
         
         sqlx::query!(
-            r#"UPDATE products SET name = ?, sku = ?, category = ?, description = ?, color = ?, size = ?, finish = ?, company = ?, unit = ?, price = ?, pieces_per_carton = ?, stock_qty = ?, low_stock_threshold = ?, image_url = ?, is_published = ?, updated_at = ? WHERE id = ?"#,
+            r#"UPDATE products SET name = ?, sku = ?, category = ?, description = ?, color = ?, size = ?, finish = ?, company = ?, unit = ?, price = ?, pieces_per_carton = ?, area_per_tile = ?, stock_qty = ?, low_stock_threshold = ?, image_url = ?, is_published = ?, updated_at = ? WHERE id = ?"#,
             input.name, input.sku, input.category, description,
-            input.color, input.size, input.finish, input.company, input.unit, input.price, input.pieces_per_carton,
+            input.color, input.size, input.finish, input.company, input.unit, input.price, input.pieces_per_carton, input.area_per_tile,
             input.stock_qty, input.low_stock_threshold, input.image_url, input.is_published, now, id
         )
         .execute(&self.pool)

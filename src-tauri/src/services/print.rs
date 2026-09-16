@@ -338,11 +338,11 @@ fn rule(c: char) -> String {
     s
 }
 
-/// Invoice timestamp as "YYYY-MM-DD HH:MM"; created_at is stored ISO-8601.
+/// Invoice timestamp as local "YYYY-MM-DD HH:MM AM/PM"; created_at is stored ISO-8601.
 /// Falls back to the bare date slice when parsing fails.
 fn format_timestamp(created_at: &str) -> String {
     let parsed = chrono::DateTime::parse_from_rfc3339(created_at)
-        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+        .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %I:%M %p").to_string())
         .or_else(|_| {
             chrono::NaiveDateTime::parse_from_str(created_at, "%Y-%m-%dT%H:%M:%S%.f")
                 .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
@@ -434,7 +434,7 @@ fn build_escpos_receipt(
 
     // Centered footer: thanks + developer credit.
     data.extend_from_slice(&[ESC, b'a', 1]);
-    data.extend_from_slice(b"\nThank you!\nDeveloped by AUZ Tech\n");
+    data.extend_from_slice(b"\nThank you!\nDeveloped by AZ Solutions\n03311203090\n");
 
     // Short trailing feed + auto cut (no page-sized waste — the printer only
     // feeds what we ask for).
@@ -486,7 +486,8 @@ fn build_text_receipt(
         }
     }
     out.push_str(&center_wrapped("Thank you!"));
-    out.push_str(&center_wrapped("Developed by AUZ Tech"));
+    out.push_str(&center_wrapped("Developed by AZ Solutions"));
+    out.push_str(&center_wrapped("03311203090"));
     out
 }
 
@@ -575,9 +576,14 @@ mod tests {
     #[test]
     fn timestamp_parses_iso_and_keeps_fallback() {
         assert_eq!(format_timestamp("2026-08-23T14:35:00"), "2026-08-23 14:35");
+        let expected = chrono::DateTime::parse_from_rfc3339("2026-08-23T14:35:00.123456+00:00")
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .format("%Y-%m-%d %I:%M %p")
+            .to_string();
         assert_eq!(
             format_timestamp("2026-08-23T14:35:00.123456+00:00"),
-            "2026-08-23 14:35"
+            expected
         );
         assert_eq!(format_timestamp("2026-08-23"), "2026-08-23");
     }

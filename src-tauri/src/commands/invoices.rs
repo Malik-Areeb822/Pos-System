@@ -36,6 +36,7 @@ pub struct CreateInvoiceItemInputCmd {
     pub unit: String,
     pub unit_price: i64,
     pub line_total: i64,
+    pub total_area: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -119,6 +120,7 @@ pub async fn create_invoice(app: AppHandle, db: State<'_, crate::database::Db>, 
             unit: item.unit,
             unit_price: item.unit_price,
             line_total: item.line_total,
+            total_area: item.total_area,
         }).collect(),
     };
     let invoice = repo.create(create_input).await?;

@@ -5,6 +5,7 @@ pub mod invoices;
 pub mod returns;
 pub mod cashiers;
 pub mod users;
+pub mod suppliers;
 
 use sqlx::SqlitePool;
 

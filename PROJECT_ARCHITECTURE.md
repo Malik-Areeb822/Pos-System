@@ -57,7 +57,8 @@ stone-flow-pos-main/
 │   │   │   └── AccessGate.tsx                   # Route Guard: Profile Approval Check
 │   │   └── ui/                                  # 40+ Radix UI Primitives (Button, Dialog, Table, etc.)
 │   ├── features/                                # Feature API Modules
-│   │   └── auth/                                # Authentication API Hooks & Stores
+│   │   ├── auth/                                # Authentication API Hooks & Stores
+│   │   └── suppliers/                           # Supplier & Purchase Ledger API Hooks
 │   ├── lib/                                     # Frontend Infrastructure
 │   │   ├── api-client.ts                        # IPC Wrapper (Tauri commands bridge)
 │   │   ├── tauri-events.ts                      # Backend Realtime Event Listeners
@@ -78,6 +79,7 @@ stone-flow-pos-main/
 │           ├── admin.returns.tsx                # Returns Processing (Stock restoral)
 │           ├── admin.reports.tsx                # Sales Reports & Excel Exports
 │           ├── admin.cashiers.tsx               # Staff & Cashier Account Approvals
+│           ├── admin.suppliers.tsx              # Supplier Directory & Purchase Ledger
 │           └── admin.settings.tsx               # Database Backup, Restore, Retention Settings
 │
 └── src-tauri/                                   # BACKEND (Rust & Tauri Shell)
@@ -96,7 +98,8 @@ stone-flow-pos-main/
         │   ├── reports.rs                       # Sales & Inventory Reporting Queries
         │   ├── print.rs                         # Thermal Receipt & PDF Invoice Commands
         │   ├── backup.rs                        # DB Snapshot, Restore & Purge Commands
-        │   └── cashiers.rs                      # Staff Approval & Cashier Admin Queries
+        │   ├── cashiers.rs                      # Staff Approval & Cashier Admin Queries
+        │   └── suppliers.rs                     # Supplier CRUD & Purchase Ledger Commands
         ├── database/                            # Database Infrastructure
         │   ├── connection.rs                    # SqlitePool Connection & Path Resolver
         │   └── migrations/                      # Embedded SQL Migrations (IMMUTABLE!)
@@ -104,14 +107,17 @@ stone-flow-pos-main/
         │       ├── 002_sequences.sql            # Invoice Sequence Generator
         │       ├── 003_defaults.sql             # Initial Default Data
         │       ├── 004_seed_products.sql        # 20 Sample Products
-        │       └── 005_sales_retention.sql      # Sales Auto-Retention Indexes
+        │       ├── 005_sales_retention.sql      # Sales Auto-Retention Indexes
+    │   ├── 007_suppliers.sql            # Supplier Directory & Purchase Ledger Tables
+    │   └── 008_tile_area.sql            # Tile Area Per Tile (REAL) + Invoice Item Total Area (REAL)
         ├── repositories/                        # SQL Abstraction & Business Logic
         │   ├── auth.rs                          # User Profile & Role Repository
         │   ├── products.rs                      # Product Repository & Stock Mutators
         │   ├── customers.rs                     # Customer Repository & Balance Mutators
         │   ├── invoices.rs                      # Invoice Repository (Stock validation, Purge)
         │   ├── returns.rs                       # Return Repository (Stock restoral, Balance adjust)
-        │   └── reports.rs                       # Report Aggregation Queries
+        │   ├── reports.rs                       # Report Aggregation Queries
+        │   └── suppliers.rs                     # Supplier & Purchase Ledger Repository
         ├── services/                            # External Services & Document Generators
         │   ├── receipt_bitmap.rs                # 80mm Bitmap Rasterizer (ab_glyph)
         │   ├── print.rs                         # ESC/POS Spooler RAW & USB Transport
@@ -167,6 +173,7 @@ CREATE TABLE products (
     unit TEXT NOT NULL DEFAULT 'sqft',
     price INTEGER NOT NULL DEFAULT 0, -- Whole rupees
     pieces_per_carton INTEGER,
+    area_per_tile REAL,              -- Tile area in sqm (only for 'tiles' category)
     stock_qty INTEGER NOT NULL DEFAULT 0,
     low_stock_threshold INTEGER NOT NULL DEFAULT 10,
     image_url TEXT,
@@ -215,6 +222,7 @@ CREATE TABLE invoice_items (
     unit TEXT NOT NULL DEFAULT 'sqft',
     unit_price INTEGER NOT NULL DEFAULT 0,
     line_total INTEGER NOT NULL DEFAULT 0,
+    total_area REAL,                  -- area_per_tile × qty (computed at invoice creation)
     created_at TEXT NOT NULL
 );
 
@@ -242,6 +250,50 @@ CREATE TABLE return_items (
     unit_price INTEGER NOT NULL DEFAULT 0,
     line_total INTEGER NOT NULL DEFAULT 0
 );
+
+-- 9. Suppliers (Supplier Directory)
+CREATE TABLE suppliers (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT,
+    email TEXT,
+    company TEXT,
+    address TEXT,
+    notes TEXT,
+    outstanding_balance INTEGER NOT NULL DEFAULT 0, -- Whole rupees owed to supplier
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_suppliers_name ON suppliers(name);
+CREATE INDEX idx_suppliers_company ON suppliers(company);
+
+-- 10. Supplier Purchases (Purchase Ledger Master)
+CREATE TABLE supplier_purchases (
+    id TEXT PRIMARY KEY NOT NULL,
+    purchase_no TEXT UNIQUE NOT NULL, -- Format: PUR-YYYY-NNNN
+    supplier_id TEXT NOT NULL REFERENCES suppliers(id) ON DELETE RESTRICT,
+    supplier_name TEXT NOT NULL,
+    subtotal INTEGER NOT NULL DEFAULT 0,
+    discount INTEGER NOT NULL DEFAULT 0,
+    total INTEGER NOT NULL DEFAULT 0,
+    amount_paid INTEGER NOT NULL DEFAULT 0,
+    payment_method TEXT NOT NULL DEFAULT 'cash',
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- 11. Supplier Purchase Items (Purchase Line Items)
+CREATE TABLE supplier_purchase_items (
+    id TEXT PRIMARY KEY NOT NULL,
+    purchase_id TEXT NOT NULL REFERENCES supplier_purchases(id) ON DELETE CASCADE,
+    description TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    unit TEXT NOT NULL DEFAULT 'pcs',
+    unit_price INTEGER NOT NULL DEFAULT 0,
+    line_total INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
 ```
 
 ---
@@ -265,6 +317,7 @@ CREATE TABLE return_items (
                                       │    (Fails transaction if stock short)     │
                                       │ 2. Insert into `invoices`                 │
                                       │ 3. Insert into `invoice_items`            │
+                                      │    └─ total_area = area_per_tile × qty    │
                                       │ 4. UPDATE products SET stock_qty          │
                                       │ 5. UPDATE customers SET balance           │
                                       └─────────────────────┬─────────────────────┘
@@ -326,6 +379,42 @@ CREATE TABLE return_items (
                      └───────────────────────────────────────────┘
 ```
 
+### D. Supplier Purchase Recording & Balance Tracking
+
+```
+[User records purchase in /admin/suppliers]
+        │
+        ▼
+[IPC Call: create_supplier_purchase(input)] ──► [create_supplier_purchase]
+                                                     │
+                       ┌─────────────────────────────┴─────────────────────────────┐
+                       │ In-Transaction Execution                                  │
+                       │ 1. Validate supplier_id exists                            │
+                       │ 2. Insert into `supplier_purchases` (PUR-YYYY-NNNN)       │
+                       │ 3. Insert into `supplier_purchase_items` (line items)      │
+                       │ 4. UPDATE suppliers SET outstanding_balance += (total-paid) │
+                       └─────────────────────────────┬─────────────────────────────┘
+                                                     │
+                       ┌─────────────────────────────┴─────────────────────────────┐
+                       │ Emit Event: `suppliers_changed`                           │
+                       └───────────────────────────────────────────────────────────┘
+
+[User clicks "Mark as Paid" on a purchase]
+        │
+        ▼
+[IPC Call: mark_supplier_purchase_paid(input)] ──► [mark_supplier_purchase_paid]
+                                                       │
+                     ┌─────────────────────────────────┴─────────────────────────────┐
+                     │ In-Transaction Execution                                      │
+                     │ 1. UPDATE supplier_purchases SET amount_paid = total          │
+                     │ 2. UPDATE suppliers SET outstanding_balance = MAX(0, bal-total)│
+                     └─────────────────────────────────┬─────────────────────────────┘
+                                                       │
+                     ┌─────────────────────────────────┴─────────────────────────────┐
+                     │ Emit Event: `suppliers_changed`                               │
+                     └───────────────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## 5. IPC Command Bridge Reference
@@ -349,6 +438,16 @@ The frontend interacts with Rust backend commands exclusively through `apiInvoke
 | **Backup** | `create_backup` | `commands/backup.rs` | `apiClient.backup.create` | Runs `VACUUM INTO` live SQLite snapshot |
 | **Backup** | `restore_backup` | `commands/backup.rs` | `apiClient.backup.restore` | Validates DB, creates pre-restore snapshot, restores DB |
 | **Backup** | `purge_old_invoices` | `commands/backup.rs` | `apiClient.backup.purge` | Purges settled invoices older than 12 months with snapshot |
+| **Suppliers** | `list_suppliers` | `commands/suppliers.rs` | `apiClient.suppliers.list` | Lists all suppliers ordered by name |
+| **Suppliers** | `get_supplier` | `commands/suppliers.rs` | `apiClient.suppliers.get` | Returns single supplier by ID |
+| **Suppliers** | `create_supplier` | `commands/suppliers.rs` | `apiClient.suppliers.create` | Creates new supplier with outstanding_balance=0 |
+| **Suppliers** | `update_supplier` | `commands/suppliers.rs` | `apiClient.suppliers.update` | Updates supplier details (name, phone, email, company, address, notes) |
+| **Suppliers** | `delete_supplier` | `commands/suppliers.rs` | `apiClient.suppliers.delete` | Deletes supplier (blocked if purchases exist due to FK RESTRICT) |
+| **Suppliers** | `list_supplier_purchases` | `commands/suppliers.rs` | `apiClient.suppliers.listPurchases` | Lists purchases for a supplier (newest first) |
+| **Suppliers** | `get_supplier_purchase` | `commands/suppliers.rs` | `apiClient.suppliers.getPurchase` | Returns single purchase by ID |
+| **Suppliers** | `get_supplier_purchase_with_items` | `commands/suppliers.rs` | `apiClient.suppliers.getPurchaseWithItems` | Returns purchase + line items tuple → `{ purchase, items }` |
+| **Suppliers** | `create_supplier_purchase` | `commands/suppliers.rs` | `apiClient.suppliers.createPurchase` | Creates purchase with line items, updates supplier outstanding_balance |
+| **Suppliers** | `mark_supplier_purchase_paid` | `commands/suppliers.rs` | `apiClient.suppliers.markPurchasePaid` | Marks purchase as paid, decrements supplier outstanding_balance |
 
 ---
 

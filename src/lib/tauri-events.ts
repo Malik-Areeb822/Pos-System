@@ -2,7 +2,7 @@ import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-export type TauriEventName = "invoices:changed" | "customers:changed" | "products:changed" | "cashiers:changed";
+export type TauriEventName = "invoices:changed" | "customers:changed" | "products:changed" | "cashiers:changed" | "suppliers:changed";
 
 export interface EventSubscription {
   unlisten: () => Promise<void>;
@@ -95,6 +95,26 @@ export function useCashiersRealtime() {
       unlisten = await listen("cashiers:changed", () => {
         queryClient.invalidateQueries({ queryKey: ["cashiers"] });
         queryClient.invalidateQueries({ queryKey: ["staff"] });
+      });
+    };
+
+    setup();
+
+    return () => {
+      unlisten?.();
+    };
+  }, [queryClient]);
+}
+
+export function useSuppliersRealtime() {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+
+    const setup = async () => {
+      unlisten = await listen("suppliers:changed", () => {
+        queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       });
     };
 

@@ -8,6 +8,7 @@ pub mod reports;
 pub mod cashiers;
 pub mod print;
 pub mod backup;
+pub mod suppliers;
 
 pub use auth::*;
 pub use products::*;

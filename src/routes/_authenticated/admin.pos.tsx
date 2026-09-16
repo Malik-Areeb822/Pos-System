@@ -25,6 +25,9 @@ type Line = { product: Product; qty: number };
 const perCarton = (p: Product) =>
   p.category === "tiles" && Number(p.pieces_per_carton) > 0 ? Number(p.pieces_per_carton) : 0;
 
+const perTileArea = (p: Product) =>
+  p.category === "tiles" && Number(p.area_per_tile) > 0 ? Number(p.area_per_tile) : 0;
+
 function PosPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -162,14 +165,19 @@ function PosPage() {
       const invoice = await createInvoice.mutateAsync({
         customer_id: customer?.id ?? null,
         customer_name: customer?.name ?? walkInName ?? "Walk-in customer",
-        items: lines.map((l) => ({
-          product_id: l.product.id,
-          product_name: l.product.name,
-          quantity: l.qty,
-          unit: l.product.unit,
-          unit_price: Number(l.product.price),
-          line_total: Number(l.product.price) * l.qty,
-        })),
+        items: lines.map((l) => {
+          const apt = perTileArea(l.product);
+          const totalArea = apt > 0 ? apt * l.qty : null;
+          return {
+            product_id: l.product.id,
+            product_name: l.product.name,
+            quantity: l.qty,
+            unit: l.product.unit,
+            unit_price: Number(l.product.price),
+            line_total: Number(l.product.price) * l.qty,
+            total_area: totalArea,
+          };
+        }),
         subtotal,
         discount: discountValue,
         total,

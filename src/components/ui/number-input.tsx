@@ -7,6 +7,8 @@ type NumberInputProps = Omit<React.ComponentPropsWithoutRef<"input">, "type" | "
   onChange?: React.ChangeEventHandler<HTMLInputElement>;
   /** Values below this clamp up on blur. */
   min?: number;
+  /** Allow decimal point (default false — whole numbers only). */
+  decimal?: boolean;
 };
 
 /**
@@ -21,8 +23,8 @@ type NumberInputProps = Omit<React.ComponentPropsWithoutRef<"input">, "type" | "
  * - On blur, empty stays empty and values below `min` clamp up to `min`.
  */
 const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
-  ({ value, defaultValue, onChange, onBlur, min = 0, ...props }, ref) => {
-    const sanitize = (raw: string) => raw.replace(/[^0-9]/g, "");
+  ({ value, defaultValue, onChange, onBlur, min = 0, decimal = false, ...props }, ref) => {
+    const sanitize = (raw: string) => decimal ? raw.replace(/[^0-9.]/g, "") : raw.replace(/[^0-9]/g, "");
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const cleaned = sanitize(e.target.value);
@@ -44,7 +46,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
       <Input
         ref={ref}
         type="number"
-        inputMode="numeric"
+        inputMode={decimal ? "decimal" : "numeric"}
         min={min}
         value={value}
         defaultValue={defaultValue}

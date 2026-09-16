@@ -31,6 +31,7 @@ pub struct InvoiceItem {
     pub unit: String,
     pub unit_price: i64,
     pub line_total: i64,
+    pub total_area: Option<f64>,
     pub created_at: String,
 }
 
@@ -56,6 +57,7 @@ pub struct CreateInvoiceItemInput {
     pub unit: String,
     pub unit_price: i64,
     pub line_total: i64,
+    pub total_area: Option<f64>,
 }
 
 pub struct InvoiceRepository {
@@ -128,7 +130,7 @@ impl InvoiceRepository {
     pub async fn get_items(&self, invoice_id: &str) -> Result<Vec<InvoiceItem>, AppError> {
         let items = sqlx::query_as_unchecked!(
             InvoiceItem,
-            r#"SELECT id, invoice_id, product_id, product_name, quantity, unit, unit_price, line_total, created_at FROM invoice_items WHERE invoice_id = ?"#,
+            r#"SELECT id, invoice_id, product_id, product_name, quantity, unit, unit_price, line_total, total_area, created_at FROM invoice_items WHERE invoice_id = ?"#,
             invoice_id
         )
         .fetch_all(&self.pool)
@@ -198,9 +200,9 @@ impl InvoiceRepository {
         for item in input.items {
             let item_id = Uuid::new_v4().to_string();
             sqlx::query!(
-                r#"INSERT INTO invoice_items (id, invoice_id, product_id, product_name, quantity, unit, unit_price, line_total, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
-                item_id, id, item.product_id, item.product_name, item.quantity, item.unit, item.unit_price, item.line_total, now
+                r#"INSERT INTO invoice_items (id, invoice_id, product_id, product_name, quantity, unit, unit_price, line_total, total_area, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+                item_id, id, item.product_id, item.product_name, item.quantity, item.unit, item.unit_price, item.line_total, item.total_area, now
             )
             .execute(&mut *tx)
             .await?;

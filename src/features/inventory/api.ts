@@ -16,6 +16,7 @@ export type Product = {
   unit: string;
   price: number;
   pieces_per_carton: number | null;
+  area_per_tile: number | null;
   stock_qty: number;
   low_stock_threshold: number;
   image_url: string | null;
@@ -24,20 +25,21 @@ export type Product = {
 
 export type CreateProductInput = {
   name: string;
-  sku?: string | null;
-  category: Category;
+  sku: string;
+  category: "marble" | "tiles" | "chips" | "sanitary";
   description: string;
-  color?: string | null;
-  size?: string | null;
-  finish?: string | null;
-  company?: string | null;
+  color: string;
+  size: string;
+  finish: string;
+  company?: string;
   unit: string;
   price: number;
-  pieces_per_carton?: number | null;
+  pieces_per_carton?: number;
+  area_per_tile?: number;
   stock_qty: number;
   low_stock_threshold: number;
-  image_url?: string | null;
-  is_published?: boolean;
+  image_url: string;
+  is_published: boolean;
 };
 
 export type ImportResult = {

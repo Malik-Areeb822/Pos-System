@@ -107,26 +107,32 @@ pub async fn import_products_from_csv(pool: &DbPool, csv_content: &str) -> Resul
             None
         };
 
-        let stock_qty = if row.len() > 10 && !row[10].is_empty() {
-            row[10].parse::<i64>().unwrap_or(0)
-        } else {
-            0
-        };
-
-        let low_stock_threshold = if row.len() > 11 && !row[11].is_empty() {
-            row[11].parse::<i64>().unwrap_or(5)
-        } else {
-            5
-        };
-
-        let image_url = if row.len() > 12 && !row[12].is_empty() {
-            Some(row[12].to_string())
+        let area_per_tile = if row.len() > 10 && !row[10].is_empty() {
+            row[10].parse::<f64>().ok()
         } else {
             None
         };
 
-        let is_published = if row.len() > 13 && !row[13].is_empty() {
-            row[13].to_lowercase().trim() == "true" || row[13].parse::<i64>().unwrap_or(1) == 1
+        let stock_qty = if row.len() > 11 && !row[11].is_empty() {
+            row[11].parse::<i64>().unwrap_or(0)
+        } else {
+            0
+        };
+
+        let low_stock_threshold = if row.len() > 12 && !row[12].is_empty() {
+            row[12].parse::<i64>().unwrap_or(5)
+        } else {
+            5
+        };
+
+        let image_url = if row.len() > 13 && !row[13].is_empty() {
+            Some(row[13].to_string())
+        } else {
+            None
+        };
+
+        let is_published = if row.len() > 14 && !row[14].is_empty() {
+            row[14].to_lowercase().trim() == "true" || row[14].parse::<i64>().unwrap_or(1) == 1
         } else {
             true
         } as i64;
@@ -145,6 +151,7 @@ pub async fn import_products_from_csv(pool: &DbPool, csv_content: &str) -> Resul
             unit,
             price,
             pieces_per_carton,
+            area_per_tile,
             stock_qty,
             low_stock_threshold,
             image_url,

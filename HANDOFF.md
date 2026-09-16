@@ -11,6 +11,86 @@
 
 ---
 
+## 🔥 Session 2026-09-16: Tile Area Calculation — Display-Only Area Tracking
+
+**Status**: ✅ **COMPLETE.** Area-per-tile on products, total area computed at invoice creation, displayed on receipts (bold), PDFs, and invoice detail pages. Area is display-only — pricing remains per tile.
+
+### What was built
+
+| Phase | Files | Summary |
+|-------|-------|---------|
+| **Phase 1: DB** | `008_tile_area.sql` | `ALTER TABLE products ADD COLUMN area_per_tile REAL` + `ALTER TABLE invoice_items ADD COLUMN total_area REAL` — nullable, zero impact on existing data |
+| **Phase 2: Rust structs** | `repositories/products.rs`, `repositories/invoices.rs` | `Option<f64>` fields on `Product`, `CreateProductInput`, `InvoiceItem`, `CreateInvoiceItemInput` — all SELECT/INSERT/UPDATE SQL updated |
+| **Phase 3: Rust commands** | `commands/products.rs`, `commands/invoices.rs` | Fields + mappings on both input structs; `total_area` passed through from frontend |
+| **Phase 4: Receipt/PDF** | `services/receipt_bitmap.rs`, `services/invoice_pdf.rs` | Bold area sub-line with `{:.3}` formatting on receipt; `[X.XXX sqm]` appended to item text on PDF |
+| **Phase 5: CSV import** | `services/inventory.rs` | Reads `area_per_tile` from CSV column 11, parsed as `f64` |
+| **Phase 6: NumberInput decimal** | `components/ui/number-input.tsx` | New `decimal?: boolean` prop allows `.` in numeric input, sets `inputMode="decimal"` |
+| **Phase 7: TS types** | `api-client.ts`, `features/pos/api.ts`, `features/inventory/api.ts`, `lib/catalog.ts`, `features/invoices/api.ts`, `lib/pos.ts` | `area_per_tile: number \| null` on Product types; `total_area` on InvoiceItem types |
+| **Phase 8: UI** | `admin.inventory.tsx`, `admin.pos.tsx`, `admin.invoices.$invoiceId.tsx` | Product form with `area_per_tile` field (tiles-only, decimal); POS checkout: `total_area = apt × qty`; Invoice detail: conditional Area column with `.toFixed(3)` |
+
+### Bug fixes during implementation
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| Area formula was `ptc × apt × qty` (showed tiles × area, not total area) | Misread `qty` as cartons when it's already tiles | Corrected to `apt × qty` — `qty` in cart is tiles |
+| Float artifact `31.95999999999997` | Rust `{:.2}` and TS `.toFixed(2)` only 2 decimals | Changed to `{:.3}` (Rust) and `.toFixed(3)` (TS) across all three display points |
+| Area text not bold on receipt | Receipt area line used `karla_regular` | Changed to `karla_bold` |
+| `cargo check` failed after migration 008 | Live DB (`%PROGRAMDATA%\CityTiles\citytiles.db`) missing `area_per_tile` and `total_area` columns — `sqlx::query!` macros validate at compile time | Applied migration to live DB manually; `sqlx::migrate!` runs it at app startup for customers |
+
+### Supplier purchase default quantity change
+
+Changed default quantity for new supplier purchase items from `1` to `0`. Updated `admin.suppliers.tsx` validation from `< 1` to `<= 0` so entering `0` saves cleanly.
+
+### Key patterns confirmed
+
+- `sqlx::query!` macros validate SQL at compile time against the live database at `C:\ProgramData\CityTiles\citytiles.db`
+- After adding columns via raw SQL, must also insert a row into `_sqlx_migrations` with correct SHA384 checksum before `cargo check`
+- `sqlx::migrate!` runs all pending migrations at app startup automatically — no manual DB patching needed for customers
+- Area stored as `Option<f64>` (SQL `REAL`) for decimal precision; display limited to 3 decimal places
+- Area is **display only** — no pricing impact; price per tile stays `price × quantity`
+
+### Installer builds
+
+Both MSI and NSIS built successfully via `cargo tauri build` (zero errors, ~5-10 min first build, ~2-4 min incremental). Signed with `CN=AUZ Tech` + RFC3161 timestamp.
+
+---
+
+## 🔥 Session 2026-09-06: Suppliers Module — Full Implementation & Wiring
+
+**Status**: ✅ **COMPLETE & VERIFIED.** Suppliers module fully operational end-to-end — DB migration, Rust backend (10 IPC handlers, 8 tests), frontend wiring (types, API hooks, realtime events), UI page, and nav entry.
+
+### What was built
+
+| Phase | Files | Summary |
+|-------|-------|---------|
+| **Phase 1: DB** | `007_suppliers.sql` | `suppliers` table (id, name, phone, email, company, address, notes, outstanding_balance) + `supplier_purchases` + `supplier_purchase_items` tables (FK cascade, indexes) |
+| **Phase 2: Rust Backend** | `repositories/suppliers.rs`, `commands/suppliers.rs` | 10 IPC handlers: `list_suppliers`, `get_supplier`, `create_supplier`, `update_supplier`, `delete_supplier`, `list_supplier_purchases`, `get_supplier_purchase`, `get_supplier_purchase_with_items`, `create_supplier_purchase`, `mark_supplier_purchase_paid`. Tests: 8/8 pass |
+| **Phase 3: Frontend Types & Hooks** | `lib/api-client.ts`, `lib/tauri-events.ts`, `features/suppliers/api.ts` | Types: `Supplier`, `CreateSupplierInput`, `SupplierPurchase`, `SupplierPurchaseItem`, `CreateSupplierPurchaseItemInput`, `CreateSupplierPurchaseInput`, `ListSupplierPurchasesParams`, `SuppliersApi`. 9 React Query hooks. Realtime `"suppliers:changed"` event listener |
+| **Phase 4: UI Page** | `routes/_authenticated/admin.suppliers.tsx` | ~770 lines: Supplier Directory (add/edit/delete with inline edit form), Record Purchase (line items, discount, payment method), Purchase History (list with paid status, mark-as-paid button) |
+| **Phase 5: Wiring** | `lib.rs`, `commands/mod.rs`, `repositories/mod.rs`, `events/emitter.rs`, `events/mod.rs`, `AdminShell.tsx` | Registered 10 IPC handlers in `invoke_handler`, added `pub mod suppliers` to commands + repositories mod.rs, added `emit_suppliers_changed` to emitter + mod re-exports, added Suppliers nav entry (Truck icon, `adminOnly: true`) |
+
+### Bugs fixed during implementation
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| Blank white screen after adding suppliers page | `useSuppliersRealtime` imported but not exported from `tauri-events.ts` | Added the hook + `"suppliers:changed"` to `TauriEventName` union |
+| `"Command create_supplier not found"` | Supplier commands not registered in `lib.rs` `invoke_handler` | Added all 10 supplier commands to `generate_handler![]` |
+| `cannot find suppliers in commands` | `pub mod suppliers` missing from `commands/mod.rs` | Added module declaration |
+| `cannot find suppliers in repositories` | `pub mod suppliers` missing from `repositories/mod.rs` | Added module declaration |
+| `emit_suppliers_changed not found` | Function missing from `events/emitter.rs` | Added `emit_suppliers_changed` function + re-export |
+| TS error `CreateSupplierPurchaseItemInput` not exported | Type inlined inside `CreateSupplierPurchaseInput` items array | Extracted to standalone `CreateSupplierPurchaseItemInput` interface |
+| Suppliers tab missing from sidebar | Nav entry never added to `AdminShell.tsx` | Added `{ to: "/admin/suppliers", label: "Suppliers", icon: Truck, adminOnly: true }` |
+
+### Key patterns confirmed
+
+- IPC command names: `snake_case` (e.g., `create_supplier`, `list_supplier_purchases`)
+- Types defined in `api-client.ts` (not feature files)
+- `getSupplierPurchaseWithItems` destructures Rust tuple `[SupplierPurchase, SupplierPurchaseItem[]]` → `{ purchase, items }`
+- Route: `src/routes/_authenticated/admin.suppliers.tsx`
+- Admin nav: `adminOnly: true` for financial/admin sections
+
+---
+
 ## 🔥 Session 2026-08-25: Release-build signin freeze — RESOLVED (Option B)
 
 **Status**: ✅ **FIXED & VERIFIED.** Root cause = react-dom v19 production event-dispatch
@@ -559,6 +639,7 @@ remain unused by the UI; these semantic gaps are recorded so nobody "fixes" them
 | Public `/website/*` routes | **Deleted from app** (2026-08-23): routes, SiteShell/InquiryForm, Supabase dep removed |
 | JWT secret | **Per-install random key file** `%PROGRAMDATA%\CityTiles\jwt.key`; env var wins; hardcoded fallback removed (2026-08-23) |
 | Money unit | **Whole rupees are canonical** everywhere incl. PDF invoices — no paise conversion anywhere (2026-08-23) |
+| Tile area | **Display only** — `area_per_tile` on products (REAL), `total_area` on invoice items (area_per_tile × qty, computed at checkout); 3 decimal places; bold on receipt; no pricing impact (2026-09-16) |
 | React version | **18.3.1 pinned (exact)** — react-dom 19 production builds wedge the signin page in an infinite event-dispatch loop in this app shape; ANY future React upgrade must re-pass the signin storm gauntlet + built-exe type-test first (2026-08-25) |
 | Invoice history window | **Recent-50 default + full-history search** (no pagination): list pages show newest 50; Invoices page search hits all history server-side, capped at 200 results (`SEARCH_CAP`) (2026-08-24) |
 | Sales retention | **Auto-purge settled invoices older than 12 months** on every app launch and after backup restore; unpaid/credit invoices are exempt until fully settled; a `VACUUM INTO` snapshot is mandatory before any delete — snapshot failure aborts the purge (2026-08-24) |

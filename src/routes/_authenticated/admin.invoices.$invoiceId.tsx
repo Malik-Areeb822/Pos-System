@@ -149,6 +149,9 @@ function InvoiceDetailPage() {
               <tr>
                 <th className="py-2">Item</th>
                 <th className="py-2 text-right">Qty</th>
+                {items.some((i: InvoiceItem) => i.total_area != null && i.total_area > 0) && (
+                  <th className="py-2 text-right">Area</th>
+                )}
                 <th className="py-2 text-right">Rate</th>
                 <th className="py-2 text-right">Amount</th>
               </tr>
@@ -160,6 +163,11 @@ function InvoiceDetailPage() {
                   <td className="py-3 text-right">
                     {item.quantity} {item.unit}
                   </td>
+                  {items.some((i: InvoiceItem) => i.total_area != null && i.total_area > 0) && (
+                    <td className="py-3 text-right">
+                      {item.total_area != null && item.total_area > 0 ? `${Number(item.total_area).toFixed(3)} sqm` : ""}
+                    </td>
+                  )}
                   <td className="py-3 text-right">{currency(item.unit_price)}</td>
                   <td className="py-3 text-right">{currency(item.line_total)}</td>
                 </tr>

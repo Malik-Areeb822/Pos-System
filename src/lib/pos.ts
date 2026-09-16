@@ -50,6 +50,7 @@ export type InvoiceItem = {
   unit: string;
   unit_price: number;
   line_total: number;
+  total_area: number | null;
 };
 
 export function useSession() {

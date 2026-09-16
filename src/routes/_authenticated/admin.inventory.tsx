@@ -47,6 +47,7 @@ type Draft = {
   price: string;
   stock_qty: string;
   pieces_per_carton: string;
+  area_per_tile: string;
   low_stock_threshold: string;
 };
 
@@ -62,6 +63,7 @@ const emptyDraft: Draft = {
   price: "0",
   stock_qty: "0",
   pieces_per_carton: "8",
+  area_per_tile: "",
   low_stock_threshold: "10",
 };
 
@@ -78,6 +80,7 @@ function toDraft(p: Product): Draft {
     price: String(p.price),
     stock_qty: String(p.stock_qty),
     pieces_per_carton: p.pieces_per_carton ? String(p.pieces_per_carton) : "",
+    area_per_tile: p.area_per_tile ? String(p.area_per_tile) : "",
     low_stock_threshold: String(p.low_stock_threshold),
   };
 }
@@ -93,6 +96,7 @@ const EXPORT_COLUMNS = [
   "Price",
   "Stock qty",
   "Tiles per carton",
+  "Area per tile",
   "Low stock alert",
   "Description",
 ] as const;
@@ -130,6 +134,10 @@ function InventoryPage() {
         pieces_per_carton:
           draft.category === "tiles" && Number(draft.pieces_per_carton) > 0
             ? Number(draft.pieces_per_carton)
+            : null,
+        area_per_tile:
+          draft.category === "tiles" && Number(draft.area_per_tile) > 0
+            ? Number(draft.area_per_tile)
             : null,
         low_stock_threshold: Number(draft.low_stock_threshold) || 0,
       };
@@ -184,6 +192,7 @@ function InventoryPage() {
         const rawCategory = pick(row, "Category").toLowerCase();
         const category = (valid.has(rawCategory as Category) ? rawCategory : "tiles") as Category;
         const perCarton = Number(pick(row, "Tiles per carton", "pieces_per_carton")) || 0;
+        const areaTile = Number(pick(row, "Area per tile", "area_per_tile")) || 0;
         const company = pick(row, "Company");
         const payload = {
           name,
@@ -197,6 +206,7 @@ function InventoryPage() {
           price: Number(pick(row, "Price")) || 0,
           stock_qty: Number(pick(row, "Stock qty", "Stock")) || 0,
           pieces_per_carton: category === "tiles" && perCarton > 0 ? perCarton : null,
+          area_per_tile: category === "tiles" && areaTile > 0 ? areaTile : null,
           low_stock_threshold: Number(pick(row, "Low stock alert", "low_stock_threshold")) || 10,
         };
         const existing = sku
@@ -235,6 +245,7 @@ function InventoryPage() {
         Price: Number(p.price),
         "Stock qty": Number(p.stock_qty),
         "Tiles per carton": p.pieces_per_carton ? Number(p.pieces_per_carton) : "",
+        "Area per tile": p.area_per_tile ? Number(p.area_per_tile) : "",
         "Low stock alert": Number(p.low_stock_threshold),
         Description: p.description ?? "",
       }));
@@ -402,6 +413,15 @@ function InventoryPage() {
                       <NumberInput min={1} {...field("pieces_per_carton")} />
                       <p className="text-xs text-muted-foreground">
                         Used at the counter to bill by carton (e.g. 8 tiles per carton).
+                      </p>
+                    </div>
+                  )}
+                  {draft.category === "tiles" && (
+                    <div className="space-y-2">
+                      <Label>Area per tile (sqm)</Label>
+                      <NumberInput min={0} decimal {...field("area_per_tile")} />
+                      <p className="text-xs text-muted-foreground">
+                        Displayed on bills and receipts (e.g. 0.32).
                       </p>
                     </div>
                   )}

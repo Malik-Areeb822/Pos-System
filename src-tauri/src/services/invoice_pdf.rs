@@ -74,7 +74,10 @@ fn build_invoice_content(doc: &mut Document, inv: &crate::repositories::invoices
     
     // Invoice details
     doc.push(elements::Paragraph::new(format!("Invoice No: {}", inv.invoice_no)));
-    doc.push(elements::Paragraph::new(format!("Date: {}", inv.created_at.split('T').next().unwrap_or(""))));
+    let date_str = chrono::DateTime::parse_from_rfc3339(&inv.created_at)
+        .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %I:%M %p").to_string())
+        .unwrap_or_else(|_| inv.created_at.split('T').next().unwrap_or("").to_string());
+    doc.push(elements::Paragraph::new(format!("Date: {}", date_str)));
     doc.push(elements::Paragraph::new(format!("Customer: {}", inv.customer_name)));
     doc.push(elements::Break::new(1));
     doc.push(elements::Paragraph::new("----------------------------------------"));
@@ -83,9 +86,14 @@ fn build_invoice_content(doc: &mut Document, inv: &crate::repositories::invoices
     // Items
     doc.push(elements::Paragraph::new("Items:"));
     for item in items {
-        let item_text = format!("{} x {} {} @ {} = {}", 
+        let mut item_text = format!("{} x {} {} @ {} = {}", 
             item.quantity, item.unit, item.product_name, 
             format_price(item.unit_price), format_price(item.line_total));
+        if let Some(total_area) = item.total_area {
+            if total_area > 0.0 {
+                item_text.push_str(&format!(" [{:.3} sqm]", total_area));
+            }
+        }
         doc.push(elements::Paragraph::new(item_text));
     }
     

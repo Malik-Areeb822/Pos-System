@@ -14,6 +14,7 @@ export type Product = {
   unit: string;
   price: number;
   pieces_per_carton: number | null;
+  area_per_tile: number | null;
   stock_qty: number;
   low_stock_threshold: number;
   image_url: string | null;

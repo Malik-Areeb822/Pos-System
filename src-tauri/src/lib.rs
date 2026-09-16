@@ -110,6 +110,18 @@ pub fn run() {
             commands::backup::export_database,
             commands::backup::import_database,
             commands::backup::list_backups,
+            
+            // Supplier commands
+            commands::suppliers::list_suppliers,
+            commands::suppliers::get_supplier,
+            commands::suppliers::create_supplier,
+            commands::suppliers::update_supplier,
+            commands::suppliers::delete_supplier,
+            commands::suppliers::list_supplier_purchases,
+            commands::suppliers::get_supplier_purchase,
+            commands::suppliers::get_supplier_purchase_with_items,
+            commands::suppliers::create_supplier_purchase,
+            commands::suppliers::mark_supplier_purchase_paid,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

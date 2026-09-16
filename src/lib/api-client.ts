@@ -123,6 +123,7 @@ export interface ApiClient {
   cashiers: CashiersApi;
   auth: AuthApi;
   backups: BackupsApi;
+  suppliers: SuppliersApi;
 }
 
 export interface ProductsApi {
@@ -215,6 +216,7 @@ export interface Product {
   unit: string;
   price: number;
   pieces_per_carton: number | null;
+  area_per_tile: number | null;
   stock_qty: number;
   low_stock_threshold: number;
   image_url: string | null;
@@ -233,6 +235,7 @@ export interface CreateProductInput {
   unit: string;
   price: number;
   pieces_per_carton?: number | null;
+  area_per_tile?: number | null;
   stock_qty: number;
   low_stock_threshold: number;
   image_url?: string | null;
@@ -285,6 +288,7 @@ export interface InvoiceItem {
   unit: string;
   unit_price: number;
   line_total: number;
+  total_area: number | null;
 }
 
 export interface CreateInvoiceInput {
@@ -307,6 +311,7 @@ export interface CreateInvoiceItemInput {
   unit: string;
   unit_price: number;
   line_total: number;
+  total_area?: number | null;
 }
 
 export interface Return {
@@ -400,6 +405,93 @@ export interface RegisterInput {
   full_name: string;
   phone?: string;
   employee_id?: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  company: string | null;
+  address: string | null;
+  notes: string | null;
+  outstanding_balance: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSupplierInput {
+  name: string;
+  phone?: string;
+  email?: string;
+  company?: string;
+  address?: string;
+  notes?: string;
+}
+
+export interface SupplierPurchase {
+  id: string;
+  purchase_no: string;
+  supplier_id: string;
+  supplier_name: string;
+  subtotal: number;
+  discount: number;
+  total: number;
+  amount_paid: number;
+  payment_method: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupplierPurchaseItem {
+  id: string;
+  purchase_id: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  unit_price: number;
+  line_total: number;
+  created_at: string;
+}
+
+export interface CreateSupplierPurchaseItemInput {
+  description: string;
+  quantity: number;
+  unit: string;
+  unit_price: number;
+  line_total: number;
+}
+
+export interface CreateSupplierPurchaseInput {
+  supplier_id: string;
+  supplier_name: string;
+  subtotal: number;
+  discount: number;
+  total: number;
+  amount_paid?: number;
+  payment_method: string;
+  notes?: string;
+  items: CreateSupplierPurchaseItemInput[];
+}
+
+export interface ListSupplierPurchasesParams {
+  limit?: number;
+  offset?: number;
+  query?: string;
+  supplier_id?: string;
+}
+
+export interface SuppliersApi {
+  list(): Promise<Supplier[]>;
+  get(id: string): Promise<Supplier | null>;
+  create(input: CreateSupplierInput): Promise<Supplier>;
+  update(id: string, input: Partial<CreateSupplierInput>): Promise<Supplier>;
+  delete(id: string): Promise<void>;
+  listPurchases(params?: ListSupplierPurchasesParams): Promise<SupplierPurchase[]>;
+  getPurchaseWithItems(id: string): Promise<{ purchase: SupplierPurchase; items: SupplierPurchaseItem[] } | null>;
+  createPurchase(input: CreateSupplierPurchaseInput): Promise<SupplierPurchase>;
+  markPurchasePaid(input: { id: string; amount: number; payment_method: string }): Promise<SupplierPurchase>;
 }
 
 export const api: ApiClient = {
@@ -498,5 +590,29 @@ export const api: ApiClient = {
     export: () => apiInvoke<string>("export_database", {}, { feature: "backups" }),
     import: (backupPath) => apiInvoke("import_database", { backupPath }, { feature: "backups" }),
     list: () => apiInvoke("list_backups", {}, { feature: "backups" }),
+  },
+  suppliers: {
+    list: () => apiInvoke("list_suppliers", {}, { feature: "suppliers" }),
+    get: (id) => apiInvoke("get_supplier", { id }, { feature: "suppliers" }),
+    create: (input) => apiInvoke("create_supplier", { input }, { feature: "suppliers" }),
+    update: (id, input) =>
+      apiInvoke("update_supplier", { input: { ...input, id } }, { feature: "suppliers" }),
+    delete: (id) => apiInvoke("delete_supplier", { id }, { feature: "suppliers" }),
+    listPurchases: (params?: ListSupplierPurchasesParams) =>
+      apiInvoke("list_supplier_purchases", { input: params ?? {} }, { feature: "suppliers" }),
+    getPurchaseWithItems: async (id) => {
+      const res = await apiInvoke<[SupplierPurchase, SupplierPurchaseItem[]] | null>(
+        "get_supplier_purchase_with_items",
+        { id },
+        { feature: "suppliers" },
+      );
+      if (!res) return null;
+      const [purchase, items] = res;
+      return { purchase, items };
+    },
+    createPurchase: (input) =>
+      apiInvoke("create_supplier_purchase", { input }, { feature: "suppliers" }),
+    markPurchasePaid: (input) =>
+      apiInvoke("mark_supplier_purchase_paid", { input }, { feature: "suppliers" }),
   },
 };
