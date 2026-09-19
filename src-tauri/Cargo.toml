@@ -1,7 +1,7 @@
 [package]
-name = "city-tiles-pos"
+name = "moon-pipe-pos"
 version = "1.0.0"
-description = "City Tiles POS - Offline Point of Sale System"
+description = "Moon Pipe and Sanitary Store - Offline Point of Sale System"
 authors = ["AUZ tech"]
 license = "MIT"
 repository = ""
@@ -9,7 +9,7 @@ edition = "2021"
 rust-version = "1.77.2"
 
 [lib]
-name = "city_tiles_pos_lib"
+name = "moon_pipe_pos_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

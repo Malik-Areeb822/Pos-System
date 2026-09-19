@@ -27,8 +27,8 @@ export const Route = createFileRoute("/_authenticated/admin/settings")({
   ),
   head: () => ({
     meta: [
-      { title: "Settings | City Tiles POS" },
-      { name: "description", content: "Backup and restore the City Tiles POS database." },
+      { title: "Settings | Moon Pipe POS" },
+      { name: "description", content: "Backup and restore the Moon Pipe POS database." },
     ],
   }),
 });
@@ -83,7 +83,7 @@ function SettingsPage() {
           <h2 className="font-semibold">Export backup</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Creates a timestamped snapshot of the entire database under{" "}
-            <code className="text-xs">%PROGRAMDATA%\CityTiles\backups</code>. Safe to run while the
+            <code className="text-xs">%PROGRAMDATA%\MoonPipe\backups</code>. Safe to run while the
             shop is open.
           </p>
           <Button

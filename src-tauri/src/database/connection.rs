@@ -31,17 +31,17 @@ impl Db {
     }
 }
 
-/// Get the database path in %PROGRAMDATA%\CityTiles\
+/// Get the database path in %PROGRAMDATA%\MoonPipe\
 pub fn get_db_path(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let program_data = std::env::var("PROGRAMDATA")
         .map_err(|_| "PROGRAMDATA environment variable not found")?;
-    let db_dir = PathBuf::from(program_data).join("CityTiles");
+    let db_dir = PathBuf::from(program_data).join("MoonPipe");
 
     // Create directory if it doesn't exist
     std::fs::create_dir_all(&db_dir)
         .map_err(|e| format!("Failed to create database directory: {}", e))?;
 
-    Ok(db_dir.join("citytiles.db"))
+    Ok(db_dir.join("moonpipe.db"))
 }
 
 /// Open a connection pool on the given database file and bring it up to date

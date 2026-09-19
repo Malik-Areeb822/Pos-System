@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "City Tiles POS",
+  "productName": "Moon Pipe POS",
   "version": "1.0.0",
-  "identifier": "com.citytiles.pos",
+  "identifier": "com.moonpipe.pos",
   "build": {
     "frontendDist": "../dist-spa",
     "devUrl": "http://localhost:8080",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "City Tiles POS",
+        "title": "Moon Pipe POS",
         "width": 1400,
         "height": 900,
         "minWidth": 1200,

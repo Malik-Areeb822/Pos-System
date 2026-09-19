@@ -27,7 +27,7 @@ interface AuthState {
   isAdmin: () => boolean;
 }
 
-const STORAGE_KEY = "city-tiles-auth";
+const STORAGE_KEY = "moon-pipe-auth";
 
 export const useAuthStore = create<AuthState>()(
   persist(

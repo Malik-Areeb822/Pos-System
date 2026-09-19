@@ -269,7 +269,7 @@ function InventoryPage() {
       const bytes = new Uint8Array(
         XLSX.write(book, { bookType: "xlsx", type: "array" }) as ArrayBuffer,
       );
-      return saveWorkbook(`city-tiles-inventory-${fileStamp()}.xlsx`, bytes);
+      return saveWorkbook(`moon-pipe-inventory-${fileStamp()}.xlsx`, bytes);
     },
     onSuccess: (path) => {
       if (path) toast.success(`Exported to ${path}`);

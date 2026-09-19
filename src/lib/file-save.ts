@@ -21,5 +21,5 @@ export async function saveWorkbook(
   return path;
 }
 
-/** Standard city-tiles filename stamp used by all exports. */
+/** Standard moon-pipe filename stamp used by all exports. */
 export const fileStamp = () => new Date().toISOString().slice(0, 10);

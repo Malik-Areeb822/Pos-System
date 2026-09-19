@@ -14,7 +14,7 @@ const RECEIPT_WIDTH: usize = 48;
 
 /// Fallback business identity printed on every receipt. Mirrors
 /// `src/lib/business.ts`; the frontend normally sends this explicitly.
-const DEFAULT_BUSINESS_NAME: &str = "City Tiles";
+const DEFAULT_BUSINESS_NAME: &str = "Moon Pipe";
 const DEFAULT_BUSINESS_ADDRESS: &str = "Mansehra Road, Abbottabad, Khyber Pakhtunkhwa";
 const DEFAULT_BUSINESS_PHONE: &str = "0334 5333447";
 
@@ -195,7 +195,7 @@ async fn print_via_spooler(data: &[u8]) -> Result<(), AppError> {
         .map_err(|e| AppError::Internal(format!("Could not open printer '{}': {}", printer_name, e)))?;
 
     // 3. Start a RAW job.
-    let mut doc_name = wide("CityTiles Receipt");
+    let mut doc_name = wide("MoonPipe Receipt");
     let mut datatype = wide("RAW");
     let doc = DOC_INFO_1W {
         pDocName: PWSTR(doc_name.as_mut_ptr()),

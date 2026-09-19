@@ -21,10 +21,10 @@ export const Route = createFileRoute("/_authenticated/admin/reports")({
   ),
   head: () => ({
     meta: [
-      { title: "Sales Reports | City Tiles POS" },
-      { name: "description", content: "Daily, weekly, monthly, six-month and yearly sales totals for City Tiles, with Excel export." },
-      { property: "og:title", content: "Sales Reports | City Tiles POS" },
-      { property: "og:description", content: "Sales performance overview and Excel exports for City Tiles." },
+      { title: "Sales Reports | Moon Pipe POS" },
+      { name: "description", content: "Daily, weekly, monthly, six-month and yearly sales totals for Moon Pipe, with Excel export." },
+      { property: "og:title", content: "Sales Reports | Moon Pipe POS" },
+      { property: "og:description", content: "Sales performance overview and Excel exports for Moon Pipe." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -101,7 +101,7 @@ async function exportRows(rows: { invoice_no: string; created_at: string; custom
   );
   try {
     const path = await saveWorkbook(
-      `city-tiles-${label.toLowerCase().replace(/\s+/g, "-")}-${fileStamp()}.xlsx`,
+      `moon-pipe-${label.toLowerCase().replace(/\s+/g, "-")}-${fileStamp()}.xlsx`,
       bytes,
     );
     if (path) toast.success(`Exported to ${path}`);

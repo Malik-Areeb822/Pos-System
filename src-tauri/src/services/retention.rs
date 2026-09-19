@@ -44,7 +44,7 @@ pub async fn purge_old_sales(pool: &DbPool) -> Result<u64, AppError> {
         .await
         .map_err(|e| AppError::Internal(format!("Retention backup failed: {}", e)))?;
     let snapshot = dir.join(format!(
-        "citytiles_backup_{}.sqlite",
+        "moonpipe_backup_{}.sqlite",
         chrono::Utc::now().format("%Y%m%d_%H%M%S")
     ));
     let _ = tokio::fs::remove_file(&snapshot).await; // VACUUM INTO requires the target not to exist

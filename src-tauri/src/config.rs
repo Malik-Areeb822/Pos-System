@@ -17,13 +17,13 @@ impl Default for Config {
     fn default() -> Self {
         let program_data = std::env::var("PROGRAMDATA")
             .unwrap_or_else(|_| "C:\\ProgramData".to_string());
-        let app_data_dir = PathBuf::from(program_data).join("CityTiles");
+        let app_data_dir = PathBuf::from(program_data).join("MoonPipe");
 
         Self {
             jwt_secret: resolve_jwt_secret(&app_data_dir),
             jwt_expiry_hours: 24,
             bcrypt_cost: 12,
-            db_path: app_data_dir.join("citytiles.db"),
+            db_path: app_data_dir.join("moonpipe.db"),
             app_data_dir,
         }
     }
@@ -37,7 +37,7 @@ impl Config {
 
 /// Secret resolution order:
 /// 1. `JWT_SECRET` environment variable (wins over everything)
-/// 2. Persisted key file `%PROGRAMDATA%\CityTiles\jwt.key` — a 64-char hex
+/// 2. Persisted key file `%PROGRAMDATA%\MoonPipe\jwt.key` — a 64-char hex
 ///    string (32 random bytes) generated once on first boot and reused on
 ///    every later boot so login sessions survive restarts.
 /// 3. Ephemeral random secret if the key file cannot be written — the app

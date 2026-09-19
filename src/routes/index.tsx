@@ -12,12 +12,12 @@ import { useLogin, useRegister, useCheckAdminExists } from "@/features/auth/api"
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Staff Sign In — City Tiles" },
+      { title: "Staff Sign In — Moon Pipe" },
       {
         name: "description",
-        content: "Sign in to the City Tiles point-of-sale and inventory dashboard.",
+        content: "Sign in to the Moon Pipe point-of-sale and inventory dashboard.",
       },
-      { property: "og:title", content: "Staff Sign In — City Tiles" },
+      { property: "og:title", content: "Staff Sign In — Moon Pipe" },
       { property: "og:description", content: "Point-of-sale and inventory dashboard access." },
       { name: "robots", content: "noindex" },
     ],
@@ -82,7 +82,7 @@ function AuthPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[--marble-black] px-5 py-16">
       <div className="w-full max-w-md border border-border/40 bg-card p-8 md:p-10 shadow-stone">
-        <span className="eyebrow text-brass">City Tiles</span>
+        <span className="eyebrow text-brass">Moon Pipe</span>
         <h1 className="mt-5 text-3xl">
           {mode === "signin"
             ? "Staff sign in"

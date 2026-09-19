@@ -20,13 +20,13 @@ export const Route = createFileRoute("/_authenticated/admin/cashiers")({
   ),
   head: () => ({
     meta: [
-      { title: "Cashier Management | City Tiles POS" },
+      { title: "Cashier Management | Moon Pipe POS" },
       {
         name: "description",
-        content: "Approve, reject, suspend or reactivate cashier accounts for the City Tiles POS.",
+        content: "Approve, reject, suspend or reactivate cashier accounts for the Moon Pipe POS.",
       },
-      { property: "og:title", content: "Cashier Management | City Tiles POS" },
-      { property: "og:description", content: "Admin approval queue for City Tiles cashier accounts." },
+      { property: "og:title", content: "Cashier Management | Moon Pipe POS" },
+      { property: "og:description", content: "Admin approval queue for Moon Pipe cashier accounts." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],

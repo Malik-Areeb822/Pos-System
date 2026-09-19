@@ -78,18 +78,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "City Tiles" },
+      { title: "Moon Pipe" },
       {
         name: "description",
         content:
-          "Natural marble, tiles, flooring chips and sanitary ware supplied direct from the factory.",
+          "Pipes, fittings, commodes, basins, mixers and sanitary accessories.",
       },
-      { name: "author", content: "City Tiles" },
-      { property: "og:title", content: "City Tiles" },
+      { name: "author", content: "Moon Pipe and Sanitary Store" },
+      { property: "og:title", content: "Moon Pipe" },
       {
         property: "og:description",
         content:
-          "Natural marble, tiles, flooring chips and sanitary ware supplied direct from the factory.",
+          "Pipes, fittings, commodes, basins, mixers and sanitary accessories.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

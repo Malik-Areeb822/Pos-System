@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use sqlx::sqlite::SqlitePoolOptions;
 use tokio::fs;
 
-/// Expected core tables a valid CityTiles database must contain.
+/// Expected core tables a valid MoonPipe database must contain.
 const REQUIRED_TABLES: &[&str] = &[
     "users",
     "products",
@@ -40,7 +40,7 @@ pub async fn export_database(app: AppHandle, db: State<'_, Db>, auth_header: Opt
     fs::create_dir_all(&dir)
         .await
         .map_err(|e| AppError::Internal(format!("Backup failed: {}", e)))?;
-    let backup_path = dir.join(format!("citytiles_backup_{}.sqlite", timestamp()));
+    let backup_path = dir.join(format!("moonpipe_backup_{}.sqlite", timestamp()));
     let _ = fs::remove_file(&backup_path).await; // VACUUM INTO requires the target not to exist
 
     // Consistent snapshot straight from the live pool: safe against in-flight
@@ -106,7 +106,7 @@ pub async fn import_database(app: AppHandle, db: State<'_, Db>, backup_path: Str
     }
     if (found_tables as usize) < REQUIRED_TABLES.len() {
         let _ = fs::remove_file(&stage_path).await;
-        return Err(AppError::Internal("File does not look like a CityTiles database".into()));
+        return Err(AppError::Internal("File does not look like a MoonPipe database".into()));
     }
 
     // 3. Auto-snapshot the current DB first (safety copy), best effort.
@@ -169,8 +169,8 @@ pub async fn list_backups(_app: AppHandle, _db: State<'_, Db>, _auth: Option<Str
     let config = crate::config::CONFIG.clone();
     let mut backups = Vec::new();
 
-    // Current exports live under %PROGRAMDATA%\CityTiles\backups; older ones
-    // sit directly in %PROGRAMDATA%\CityTiles. Scan both, dedupe by path.
+    // Current exports live under %PROGRAMDATA%\MoonPipe\backups; older ones
+    // sit directly in %PROGRAMDATA%\MoonPipe. Scan both, dedupe by path.
     let mut roots = vec![backups_dir(&config)];
     roots.push(config.app_data_dir.clone());
 
@@ -182,7 +182,7 @@ pub async fn list_backups(_app: AppHandle, _db: State<'_, Db>, _auth: Option<Str
         while let Ok(Some(entry)) = entries.next_entry().await {
             let name = entry.file_name().to_string_lossy().to_string();
             let is_backup =
-                (name.starts_with("citytiles_backup_") || name.starts_with("pre_restore_"))
+                (name.starts_with("moonpipe_backup_") || name.starts_with("pre_restore_"))
                     && name.ends_with(".sqlite");
             if !is_backup {
                 continue;

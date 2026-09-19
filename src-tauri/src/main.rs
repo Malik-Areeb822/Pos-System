@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-  city_tiles_pos_lib::run()
+  moon_pipe_pos_lib::run()
 }
