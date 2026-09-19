@@ -37,3 +37,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Build artifacts
+src-tauri/target
+dist-spa
