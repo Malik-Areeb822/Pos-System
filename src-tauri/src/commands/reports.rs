@@ -177,8 +177,8 @@ pub async fn get_inventory_report(db: State<'_, crate::database::Db>, _auth: Opt
         low_stock_threshold: r.low_stock_threshold,
         unit: r.unit,
         price: r.price,
-        purchase_price: r.purchase_price,
-        value: r.value,
+        purchase_price: r.purchase_price.unwrap_or(0),
+        value: r.value.unwrap_or(0),
     }).collect();
 
     Ok(report)
