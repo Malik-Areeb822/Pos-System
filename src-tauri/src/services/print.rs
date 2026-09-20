@@ -412,6 +412,11 @@ fn build_escpos_receipt(
             two_col("Discount", &format!("-{}", format_price(inv.discount))).as_bytes(),
         );
     }
+    if inv.previous_balance > 0 {
+        data.extend_from_slice(
+            two_col("Previous balance", &format_price(inv.previous_balance)).as_bytes(),
+        );
+    }
     data.extend_from_slice(&[ESC, b'E', 1]); // bold on
     data.extend_from_slice(two_col("TOTAL", &format_price(inv.total)).as_bytes());
     data.extend_from_slice(&[ESC, b'E', 0]); // bold off
@@ -470,6 +475,9 @@ fn build_text_receipt(
     out.push_str(&two_col("Subtotal", &format_price(inv.subtotal)));
     if inv.discount > 0 {
         out.push_str(&two_col("Discount", &format!("-{}", format_price(inv.discount))));
+    }
+    if inv.previous_balance > 0 {
+        out.push_str(&two_col("Previous balance", &format_price(inv.previous_balance)));
     }
     out.push_str(&two_col("TOTAL", &format_price(inv.total)));
     out.push_str(&rule('='));

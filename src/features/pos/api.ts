@@ -5,7 +5,7 @@ export type Product = {
   id: string;
   name: string;
   sku: string | null;
-  category: "sanitary";
+  category: "sanitary" | "hardware";
   description: string;
   color: string | null;
   size: string | null;

@@ -11,6 +11,7 @@ export type Invoice = {
   subtotal: number;
   discount: number;
   total: number;
+  previous_balance: number;
   amount_paid: number;
   payment_method: PaymentMethod;
   notes: string | null;
@@ -27,6 +28,7 @@ export type InvoiceItem = {
   unit: string;
   unit_price: number;
   line_total: number;
+  purchase_price: number;
   total_area: number | null;
 };
 
@@ -50,6 +52,7 @@ export type CreateInvoiceItemInput = {
   unit: string;
   unit_price: number;
   line_total: number;
+  purchase_price: number;
   total_area?: number | null;
 };
 

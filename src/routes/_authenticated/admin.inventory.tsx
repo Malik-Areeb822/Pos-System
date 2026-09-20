@@ -45,6 +45,7 @@ type Draft = {
   company: string;
   unit: string;
   price: string;
+  purchase_price: string;
   stock_qty: string;
   pieces_per_carton: string;
   area_per_tile: string;
@@ -54,15 +55,16 @@ type Draft = {
 const emptyDraft: Draft = {
   name: "",
   sku: "",
-  category: "marble",
+  category: "sanitary",
   description: "",
   color: "",
   size: "",
   company: "",
-  unit: "sq ft",
+  unit: "unit",
   price: "0",
+  purchase_price: "0",
   stock_qty: "0",
-  pieces_per_carton: "8",
+  pieces_per_carton: "",
   area_per_tile: "",
   low_stock_threshold: "10",
 };
@@ -78,6 +80,7 @@ function toDraft(p: Product): Draft {
     company: p.company ?? "",
     unit: p.unit,
     price: String(p.price),
+    purchase_price: String(p.purchase_price),
     stock_qty: String(p.stock_qty),
     pieces_per_carton: p.pieces_per_carton ? String(p.pieces_per_carton) : "",
     area_per_tile: p.area_per_tile ? String(p.area_per_tile) : "",
@@ -94,6 +97,7 @@ const EXPORT_COLUMNS = [
   "Company",
   "Unit",
   "Price",
+  "Purchase price",
   "Stock qty",
   "Tiles per carton",
   "Area per tile",
@@ -130,15 +134,10 @@ function InventoryPage() {
         company: draft.category === "sanitary" ? draft.company.trim() || null : null,
         unit: draft.unit.trim() || "unit",
         price: Number(draft.price) || 0,
+        purchase_price: Number(draft.purchase_price) || 0,
         stock_qty: Number(draft.stock_qty) || 0,
-        pieces_per_carton:
-          draft.category === "tiles" && Number(draft.pieces_per_carton) > 0
-            ? Number(draft.pieces_per_carton)
-            : null,
-        area_per_tile:
-          draft.category === "tiles" && Number(draft.area_per_tile) > 0
-            ? Number(draft.area_per_tile)
-            : null,
+        pieces_per_carton: null,
+        area_per_tile: null,
         low_stock_threshold: Number(draft.low_stock_threshold) || 0,
       };
       if (!payload.name) throw new Error("Product name is required");
@@ -190,9 +189,7 @@ function InventoryPage() {
         const name = pick(row, "Name", "product") || sku;
         if (!name) continue;
         const rawCategory = pick(row, "Category").toLowerCase();
-        const category = (valid.has(rawCategory as Category) ? rawCategory : "tiles") as Category;
-        const perCarton = Number(pick(row, "Tiles per carton", "pieces_per_carton")) || 0;
-        const areaTile = Number(pick(row, "Area per tile", "area_per_tile")) || 0;
+        const category = (valid.has(rawCategory as Category) ? rawCategory : "sanitary") as Category;
         const company = pick(row, "Company");
         const payload = {
           name,
@@ -202,11 +199,12 @@ function InventoryPage() {
           color: pick(row, "Colour", "Color") || null,
           size: pick(row, "Size") || null,
           company: category === "sanitary" && company ? company : null,
-          unit: pick(row, "Unit") || (category === "tiles" ? "tile" : "unit"),
+          unit: pick(row, "Unit") || "unit",
           price: Number(pick(row, "Price")) || 0,
+          purchase_price: Number(pick(row, "Purchase price", "Cost")) || 0,
           stock_qty: Number(pick(row, "Stock qty", "Stock")) || 0,
-          pieces_per_carton: category === "tiles" && perCarton > 0 ? perCarton : null,
-          area_per_tile: category === "tiles" && areaTile > 0 ? areaTile : null,
+          pieces_per_carton: null,
+          area_per_tile: null,
           low_stock_threshold: Number(pick(row, "Low stock alert", "low_stock_threshold")) || 10,
         };
         const existing = sku
@@ -400,6 +398,10 @@ function InventoryPage() {
                     <NumberInput min={0} {...field("price")} />
                   </div>
                   <div className="space-y-2">
+                    <Label>Purchase price (PKR)</Label>
+                    <NumberInput min={0} {...field("purchase_price")} />
+                  </div>
+                  <div className="space-y-2">
                     <Label>Stock quantity</Label>
                     <NumberInput min={0} {...field("stock_qty")} />
                   </div>
@@ -407,24 +409,6 @@ function InventoryPage() {
                     <Label>Low stock alert at</Label>
                     <NumberInput min={0} {...field("low_stock_threshold")} />
                   </div>
-                  {draft.category === "tiles" && (
-                    <div className="space-y-2">
-                      <Label>Tiles per carton</Label>
-                      <NumberInput min={1} {...field("pieces_per_carton")} />
-                      <p className="text-xs text-muted-foreground">
-                        Used at the counter to bill by carton (e.g. 8 tiles per carton).
-                      </p>
-                    </div>
-                  )}
-                  {draft.category === "tiles" && (
-                    <div className="space-y-2">
-                      <Label>Area per tile (sqm)</Label>
-                      <NumberInput min={0} decimal {...field("area_per_tile")} />
-                      <p className="text-xs text-muted-foreground">
-                        Displayed on bills and receipts (e.g. 0.32).
-                      </p>
-                    </div>
-                  )}
                   <div className="space-y-2 sm:col-span-2">
                     <Label>Description</Label>
                     <Textarea rows={3} {...field("description")} maxLength={600} />

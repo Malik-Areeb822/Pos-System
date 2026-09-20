@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { currency, type Product } from "@/features/inventory/api";
 import { useCustomersForPOS, type Customer } from "@/features/pos/api";
 import { useCreateInvoice, usePrintReceipt } from "@/features/invoices/api";
@@ -21,12 +20,6 @@ export const Route = createFileRoute("/_authenticated/admin/pos")({
 });
 
 type Line = { product: Product; qty: number };
-
-const perCarton = (p: Product) =>
-  p.category === "tiles" && Number(p.pieces_per_carton) > 0 ? Number(p.pieces_per_carton) : 0;
-
-const perTileArea = (p: Product) =>
-  p.category === "tiles" && Number(p.area_per_tile) > 0 ? Number(p.area_per_tile) : 0;
 
 function PosPage() {
   const navigate = useNavigate();
@@ -68,19 +61,21 @@ function PosPage() {
   // A stray minus can never ADD money — discount is clamped to >= 0 and the
   // bill floors at zero.
   const discountValue = Math.max(0, Number(discount) || 0);
-  const total = Math.max(0, subtotal - discountValue);
-  const paidNow = Math.min(Math.max(0, Number(amountPaid) || 0), total);
+  const previousBalance = customerId
+    ? Math.max(0, Number(customers.find((c) => c.id === customerId)?.outstanding_balance ?? 0))
+    : 0;
+  const total = Math.max(0, subtotal - discountValue + previousBalance);
+  const paidNow = Math.max(0, Number(amountPaid) || 0);
   const balanceDue = total - paidNow;
 
   function addLine(product: Product) {
     setLines((prev) => {
       const found = prev.find((l) => l.product.id === product.id);
-      const box = perCarton(product);
       if (found)
         return prev.map((l) =>
-          l.product.id === product.id ? { ...l, qty: l.qty + (box || 1) } : l,
+          l.product.id === product.id ? { ...l, qty: l.qty + 1 } : l,
         );
-      return [...prev, { product, qty: box || 1 }];
+      return [...prev, { product, qty: 1 }];
     });
   }
 
@@ -122,27 +117,6 @@ function PosPage() {
   const checkout = useMutation({
     mutationFn: async () => {
       if (lines.length === 0) throw new Error("Add at least one product");
-      if ((Number(amountPaid) || 0) > total) {
-        throw new Error("Amount paid cannot exceed the total");
-      }
-
-      // Stock guard (client pre-check; the backend re-validates in its
-      // transaction). Aggregates per product across duplicate cart lines.
-      const demand = new Map<string, { wanted: number; stock: number; name: string }>();
-      for (const l of lines) {
-        const entry = demand.get(l.product.id);
-        demand.set(l.product.id, {
-          wanted: (entry?.wanted ?? 0) + l.qty,
-          stock: Number(l.product.stock_qty),
-          name: l.product.name,
-        });
-      }
-      const shortfalls = [...demand.values()]
-        .filter((d) => d.wanted > d.stock)
-        .map((d) => `"${d.name}" — in stock: ${d.stock}, tried: ${d.wanted}`);
-      if (shortfalls.length > 0) {
-        throw new Error(`Not enough stock: ${shortfalls.join("; ")}`);
-      }
 
       let customer: Customer | null = null;
       if (customerId) {
@@ -165,19 +139,16 @@ function PosPage() {
       const invoice = await createInvoice.mutateAsync({
         customer_id: customer?.id ?? null,
         customer_name: customer?.name ?? walkInName ?? "Walk-in customer",
-        items: lines.map((l) => {
-          const apt = perTileArea(l.product);
-          const totalArea = apt > 0 ? apt * l.qty : null;
-          return {
-            product_id: l.product.id,
-            product_name: l.product.name,
-            quantity: l.qty,
-            unit: l.product.unit,
-            unit_price: Number(l.product.price),
-            line_total: Number(l.product.price) * l.qty,
-            total_area: totalArea,
-          };
-        }),
+        items: lines.map((l) => ({
+          product_id: l.product.id,
+          product_name: l.product.name,
+          quantity: l.qty,
+          unit: l.product.unit,
+          unit_price: Number(l.product.price),
+          line_total: Number(l.product.price) * l.qty,
+          purchase_price: Number(l.product.purchase_price) || 0,
+          total_area: null,
+        })),
         subtotal,
         discount: discountValue,
         total,
@@ -215,7 +186,7 @@ function PosPage() {
                 <Input
                   ref={scanRef}
                   className="pl-9"
-                  placeholder="Type tile code (e.g. 100B) and press Enter"
+                  placeholder="Type product code and press Enter"
                   value={scan}
                   onChange={(e) => setScan(e.target.value)}
                   onKeyDown={(e) => {
@@ -274,7 +245,7 @@ function PosPage() {
               </Button>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Tiles are identified by their stock code — enter the code to add the item instantly.
+              Enter the product stock code to add items to the sale instantly.
             </p>
           </div>
           <div className="relative">
@@ -300,9 +271,6 @@ function PosPage() {
                 <p className="text-xs text-muted-foreground">
                   {[p.color, p.size, p.finish].filter(Boolean).join(" · ") || p.unit}
                 </p>
-                {perCarton(p) > 0 && (
-                  <p className="text-xs text-brass">{perCarton(p)} tiles / carton</p>
-                )}
                 <p className="mt-1 text-sm">
                   {currency(p.price)}{" "}
                   <span className="text-xs text-muted-foreground">
@@ -326,17 +294,14 @@ function PosPage() {
               </p>
             )}
             {lines.map((l) => {
-              const box = perCarton(l.product);
               const setQty = (qty: number) =>
                 setLines((prev) =>
                   prev.map((x) =>
                     x.product.id === l.product.id
-                      ? { ...x, qty: Math.max(box ? 0 : 1, qty) }
+                      ? { ...x, qty: Math.max(1, qty) }
                       : x,
                   ),
                 );
-              const cartons = box ? Math.floor(l.qty / box) : 0;
-              const loose = box ? l.qty % box : 0;
               return (
                 <div key={l.product.id} className="py-3">
                   <div className="flex items-center gap-3">
@@ -344,17 +309,14 @@ function PosPage() {
                       <p className="truncate text-sm font-medium">{l.product.name}</p>
                       <p className="text-xs text-muted-foreground">
                         {currency(l.product.price)} / {l.product.unit}
-                        {box ? ` · ${box} per carton` : ""}
                       </p>
                     </div>
-                    {!box && (
-                      <NumberInput
-                        min={1}
-                        className="w-20"
-                        value={l.qty}
-                        onChange={(e) => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
-                      />
-                    )}
+                    <NumberInput
+                      min={1}
+                      className="w-20"
+                      value={l.qty}
+                      onChange={(e) => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+                    />
                     <span className="w-24 text-right text-sm">
                       {currency(Number(l.product.price) * l.qty)}
                     </span>
@@ -368,31 +330,6 @@ function PosPage() {
                       <Trash2 className="size-4" />
                     </button>
                   </div>
-                  {box > 0 && (
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Cartons</Label>
-                        <NumberInput
-                          value={cartons}
-                          onChange={(e) =>
-                            setQty(Math.max(0, Number(e.target.value) || 0) * box + loose)
-                          }
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Extra tiles</Label>
-                        <NumberInput
-                          value={loose}
-                          onChange={(e) =>
-                            setQty(cartons * box + Math.max(0, Number(e.target.value) || 0))
-                          }
-                        />
-                      </div>
-                      <p className="col-span-2 text-xs text-muted-foreground">
-                        {l.qty} {l.product.unit} total
-                      </p>
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -448,7 +385,7 @@ function PosPage() {
                 onChange={(e) => setDeliveryDate(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Use this for marble or tile orders that will be delivered later.
+                Use this for orders that will be delivered later.
               </p>
             </div>
 
@@ -502,6 +439,12 @@ function PosPage() {
                 <span>Discount</span>
                 <span>-{currency(Number(discount) || 0)}</span>
               </div>
+              {previousBalance > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Previous balance</span>
+                  <span>{currency(previousBalance)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-lg font-semibold">
                 <span>Total</span>
                 <span>{currency(total)}</span>

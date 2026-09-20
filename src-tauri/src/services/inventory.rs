@@ -150,6 +150,7 @@ pub async fn import_products_from_csv(pool: &DbPool, csv_content: &str) -> Resul
             company: None,
             unit,
             price,
+            purchase_price: 0,
             pieces_per_carton,
             area_per_tile,
             stock_qty,

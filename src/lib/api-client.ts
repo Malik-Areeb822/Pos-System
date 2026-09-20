@@ -207,7 +207,7 @@ export interface Product {
   id: string;
   name: string;
   sku: string | null;
-  category: "marble" | "tiles" | "chips" | "sanitary";
+  category: "sanitary" | "hardware";
   description: string;
   color: string | null;
   size: string | null;
@@ -215,6 +215,7 @@ export interface Product {
   company: string | null;
   unit: string;
   price: number;
+  purchase_price: number;
   pieces_per_carton: number | null;
   area_per_tile: number | null;
   stock_qty: number;
@@ -226,7 +227,7 @@ export interface Product {
 export interface CreateProductInput {
   name: string;
   sku?: string | null;
-  category: "marble" | "tiles" | "chips" | "sanitary";
+  category: "sanitary" | "hardware";
   description: string;
   color?: string | null;
   size?: string | null;
@@ -234,6 +235,7 @@ export interface CreateProductInput {
   company?: string | null;
   unit: string;
   price: number;
+  purchase_price: number;
   pieces_per_carton?: number | null;
   area_per_tile?: number | null;
   stock_qty: number;
@@ -272,6 +274,7 @@ export interface Invoice {
   subtotal: number;
   discount: number;
   total: number;
+  previous_balance: number;
   amount_paid: number;
   payment_method: "cash" | "bank" | "credit";
   notes: string | null;
@@ -288,6 +291,7 @@ export interface InvoiceItem {
   unit: string;
   unit_price: number;
   line_total: number;
+  purchase_price: number;
   total_area: number | null;
 }
 
@@ -311,6 +315,7 @@ export interface CreateInvoiceItemInput {
   unit: string;
   unit_price: number;
   line_total: number;
+  purchase_price: number;
   total_area?: number | null;
 }
 
@@ -344,6 +349,9 @@ export interface DashboardStats {
   total_invoices_today: number;
   low_stock_count: number;
   outstanding_balance: number;
+  profit_today: number;
+  profit_7d: number;
+  profit_30d: number;
 }
 
 export interface ReportParams {
@@ -358,6 +366,7 @@ export interface SalesReportItem {
   cash_sales: number;
   credit_sales: number;
   bank_sales: number;
+  profit: number;
 }
 
 export interface InventoryReportItem {
@@ -369,6 +378,7 @@ export interface InventoryReportItem {
   low_stock_threshold: number;
   unit: string;
   price: number;
+  purchase_price: number;
   value: number;
 }
 

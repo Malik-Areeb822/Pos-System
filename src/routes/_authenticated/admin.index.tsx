@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { TrendingUp, Package, AlertTriangle, Wallet } from "lucide-react";
+import { TrendingUp, Package, AlertTriangle, Wallet, DollarSign } from "lucide-react";
 
 import { AdminShell } from "@/components/admin/AdminShell";
 import { Button } from "@/components/ui/button";
@@ -40,13 +40,14 @@ function DashboardPage() {
     (i) => new Date(i.created_at).toDateString() === new Date().toDateString(),
   );
   const lowStock = products.filter((p) => p.stock_qty <= p.low_stock_threshold);
-  const stockValue = products.reduce((acc, p) => acc + Number(p.price) * Number(p.stock_qty), 0);
+  const stockValue = products.reduce((acc, p) => acc + Number(p.price) * Math.max(0, Number(p.stock_qty)), 0);
   const outstanding = invoices.reduce(
     (acc, i) => acc + Math.max(0, Number(i.total) - Number(i.amount_paid)),
     0,
   );
 
   const bestSellers = products
+    .filter((p) => p.stock_qty > 0)
     .slice()
     .sort((a, b) => Number(b.price) * b.stock_qty - Number(a.price) * a.stock_qty)
     .slice(0, 5);
@@ -56,6 +57,9 @@ function DashboardPage() {
     { label: "Last 7 days", value: currency(sumBetween(invoices, 7)), sub: "rolling week", icon: TrendingUp },
     { label: "Stock value", value: currency(stockValue), sub: `${products.length} products`, icon: Package },
     { label: "Outstanding credit", value: currency(outstanding), sub: "unpaid balances", icon: Wallet },
+    { label: "Profit today", value: currency(dashboard?.profit_today ?? 0), sub: "gross margin", icon: DollarSign },
+    { label: "Profit 7 days", value: currency(dashboard?.profit_7d ?? 0), sub: "rolling week", icon: DollarSign },
+    { label: "Profit 30 days", value: currency(dashboard?.profit_30d ?? 0), sub: "rolling month", icon: DollarSign },
   ];
 
   return (
@@ -133,7 +137,7 @@ function DashboardPage() {
               {bestSellers.map((p: Product) => (
                 <li key={p.id} className="flex justify-between">
                   <span className="text-muted-foreground">{p.name}</span>
-                  <span>{currency(Number(p.price) * p.stock_qty)}</span>
+                  <span>{currency(Number(p.price) * Math.max(0, p.stock_qty))}</span>
                 </li>
               ))}
             </ul>

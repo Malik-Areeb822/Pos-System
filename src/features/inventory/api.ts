@@ -1,7 +1,7 @@
 import { api } from "@/lib/api-client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
-export type Category = "sanitary";
+export type Category = "sanitary" | "hardware";
 
 export type Product = {
   id: string;
@@ -15,6 +15,7 @@ export type Product = {
   company: string | null;
   unit: string;
   price: number;
+  purchase_price: number;
   pieces_per_carton: number | null;
   area_per_tile: number | null;
   stock_qty: number;
@@ -26,7 +27,7 @@ export type Product = {
 export type CreateProductInput = {
   name: string;
   sku: string;
-  category: "sanitary";
+  category: Category;
   description: string;
   color: string;
   size: string;
@@ -34,6 +35,7 @@ export type CreateProductInput = {
   company?: string;
   unit: string;
   price: number;
+  purchase_price: number;
   pieces_per_carton?: number;
   area_per_tile?: number;
   stock_qty: number;
@@ -108,6 +110,12 @@ export const CATEGORIES = [
     key: "sanitary" as const,
     label: "Sanitary",
     blurb: "Pipes, fittings, commodes, basins, mixers and accessories.",
+    image: "/images/cat-sanitary.jpg",
+  },
+  {
+    key: "hardware" as const,
+    label: "Hardware",
+    blurb: "Tools, fasteners, valves, and general hardware supplies.",
     image: "/images/cat-sanitary.jpg",
   },
 ] as const;

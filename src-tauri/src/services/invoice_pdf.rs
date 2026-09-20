@@ -106,6 +106,9 @@ fn build_invoice_content(doc: &mut Document, inv: &crate::repositories::invoices
     if inv.discount > 0 {
         doc.push(elements::Paragraph::new(format!("Discount: -{}", format_price(inv.discount))));
     }
+    if inv.previous_balance > 0 {
+        doc.push(elements::Paragraph::new(format!("Previous balance: {}", format_price(inv.previous_balance))));
+    }
     doc.push(elements::Paragraph::new(format!("TOTAL: {}", format_price(inv.total))));
     doc.push(elements::Paragraph::new(format!("Paid: {}", format_price(inv.amount_paid))));
     if inv.amount_paid < inv.total {

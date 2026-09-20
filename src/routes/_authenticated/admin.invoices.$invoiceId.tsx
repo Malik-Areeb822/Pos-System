@@ -184,6 +184,12 @@ function InvoiceDetailPage() {
               <span>Discount</span>
               <span>-{currency(invoice.discount)}</span>
             </div>
+            {invoice.previous_balance > 0 && (
+              <div className="flex justify-between text-muted-foreground">
+                <span>Previous balance</span>
+                <span>{currency(invoice.previous_balance)}</span>
+              </div>
+            )}
             <div className="flex justify-between border-t border-border pt-2 text-lg font-semibold">
               <span>Total</span>
               <span>{currency(invoice.total)}</span>

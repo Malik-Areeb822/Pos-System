@@ -347,6 +347,9 @@ pub fn render_receipt(
     if inv.discount > 0 {
         draw_two_col(&mut c, fonts, "Discount", &format!("-{}", price(inv.discount)), false, body_size);
     }
+    if inv.previous_balance > 0 {
+        draw_two_col(&mut c, fonts, "Previous balance", &price(inv.previous_balance), false, body_size);
+    }
     c.push_blank(8);
     c.solid_rule();
     c.push_blank(10);
@@ -468,6 +471,7 @@ mod tests {
             subtotal: 4500,
             discount: 200,
             total: 4300,
+            previous_balance: 0,
             amount_paid: 3000,
             payment_method: "cash".into(),
             notes: Some("Deliver before Friday".into()),

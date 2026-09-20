@@ -109,7 +109,8 @@ stone-flow-pos-main/
         │       ├── 004_seed_products.sql        # 20 Sample Products
         │       ├── 005_sales_retention.sql      # Sales Auto-Retention Indexes
     │   ├── 007_suppliers.sql            # Supplier Directory & Purchase Ledger Tables
-    │   └── 008_tile_area.sql            # Tile Area Per Tile (REAL) + Invoice Item Total Area (REAL)
+    │   ├── 008_tile_area.sql            # Tile Area Per Tile (REAL) + Invoice Item Total Area (REAL)
+    │   └── 009_invoice_previous_balance.sql  # Invoice Previous Balance (INTEGER) for carry-forward
         ├── repositories/                        # SQL Abstraction & Business Logic
         │   ├── auth.rs                          # User Profile & Role Repository
         │   ├── products.rs                      # Product Repository & Stock Mutators
@@ -164,7 +165,7 @@ CREATE TABLE products (
     id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     sku TEXT UNIQUE,
-    category TEXT NOT NULL, -- 'marble' | 'tiles' | 'chips' | 'sanitary'
+    category TEXT NOT NULL, -- 'sanitary' | 'hardware' (client B) or 'marble' | 'tiles' | 'chips' (client A)
     description TEXT,
     color TEXT,
     size TEXT,
@@ -205,6 +206,7 @@ CREATE TABLE invoices (
     total INTEGER NOT NULL DEFAULT 0,
     amount_paid INTEGER NOT NULL DEFAULT 0,
     payment_method TEXT NOT NULL DEFAULT 'cash', -- 'cash' | 'bank' | 'credit'
+    previous_balance INTEGER NOT NULL DEFAULT 0, -- Carried from customer's outstanding_balance at creation
     notes TEXT,
     delivery_date TEXT,
     created_by TEXT REFERENCES profiles(id),
@@ -313,19 +315,24 @@ CREATE TABLE supplier_purchase_items (
                                                             │
                                       ┌─────────────────────┴─────────────────────┐
                                       │ In-Transaction SQL Executions             │
-                                      │ 1. Validate Stock: Ensure stock_qty >= qty│
+                                      │ 1. Read customer's outstanding_balance    │
+                                      │    → stored as previous_balance on invoice│
+                                      │ 2. Compute total = subtotal - discount    │
+                                      │    + previous_balance                     │
+                                      │ 3. Validate Stock: stock_qty >= qty       │
                                       │    (Fails transaction if stock short)     │
-                                      │ 2. Insert into `invoices`                 │
-                                      │ 3. Insert into `invoice_items`            │
+                                      │ 4. Insert into `invoices`                 │
+                                      │ 5. Insert into `invoice_items`            │
                                       │    └─ total_area = area_per_tile × qty    │
-                                      │ 4. UPDATE products SET stock_qty          │
-                                      │ 5. UPDATE customers SET balance           │
+                                      │ 6. UPDATE products SET stock_qty          │
+                                      │ 7. UPDATE customers SET outstanding_      │
+                                      │    balance = MAX(0, total - amount_paid)  │
                                       └─────────────────────┬─────────────────────┘
                                                             │
                                        ┌────────────────────┴────────────────────┐
                                        │ Realtime Event & Auto-Print Dispatch    │
-                                       │ 1. Emit `invoices_changed` IPC event    │
-                                       │ 2. Trigger `print_receipt` IPC command  │
+                                       │ 1. Emit `invoices_changed` IPC event   │
+                                       │ 2. Trigger `print_receipt` IPC command │
                                        └─────────────────────────────────────────┘
 ```
 
@@ -429,7 +436,7 @@ The frontend interacts with Rust backend commands exclusively through `apiInvoke
 | **Products** | `list_products` | `commands/products.rs` | `apiClient.inventory.list` | Retrieves catalog products with category/search filters |
 | **Products** | `create_product` | `commands/products.rs` | `apiClient.inventory.create` | Inserts new product into inventory |
 | **Products** | `update_product` | `commands/products.rs` | `apiClient.inventory.update` | Updates product details, prices, or stock threshold |
-| **Invoices** | `create_invoice` | `commands/invoices.rs` | `apiClient.invoices.create` | Atomic invoice checkout, stock validation & decrement |
+| **Invoices** | `create_invoice` | `commands/invoices.rs` | `apiClient.invoices.create` | Atomic invoice checkout; reads customer balance → `previous_balance`; computes total; validates stock; updates balance |
 | **Invoices** | `list_invoices` | `commands/invoices.rs` | `apiClient.invoices.list` | Fetches newest 50 invoices or runs server search (cap 200) |
 | **Invoices** | `get_invoice` | `commands/invoices.rs` | `apiClient.invoices.get` | Returns invoice master details + line items |
 | **Print** | `print_receipt` | `commands/print.rs` | `apiClient.invoices.printReceipt` | Generates raster receipt bitmap and prints via Spooler/USB |
@@ -472,3 +479,7 @@ The frontend interacts with Rust backend commands exclusively through `apiInvoke
 > [!NOTE]
 > **5. Default Printer Targeting**
 > 80mm thermal receipt printing routes directly to the **Windows Default Printer** via the Win32 Print Spooler RAW API. Ensure the thermal receipt printer is set as the Windows default printer on the host machine.
+
+> [!IMPORTANT]
+> **6. Invoice Chain — Unpaid Balances Carry Forward**
+> When creating an invoice for a named customer with an outstanding balance, the balance is read from `customers.outstanding_balance` and stored as `previous_balance` on the new invoice. The invoice `total` is computed as `subtotal - discount + previous_balance`. After payment, `outstanding_balance` is SET to `MAX(0, total - amount_paid)` — not accumulated. `mark_paid()` subtracts from the customer balance as before.

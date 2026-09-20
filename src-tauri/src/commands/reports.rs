@@ -12,6 +12,9 @@ pub struct DashboardStats {
     pub total_invoices_today: i64,
     pub low_stock_count: i64,
     pub outstanding_balance: i64,
+    pub profit_today: i64,
+    pub profit_7d: i64,
+    pub profit_30d: i64,
 }
 
 #[derive(Serialize)]
@@ -22,6 +25,7 @@ pub struct SalesReportItem {
     pub cash_sales: i64,
     pub credit_sales: i64,
     pub bank_sales: i64,
+    pub profit: i64,
 }
 
 #[derive(Serialize)]
@@ -34,6 +38,7 @@ pub struct InventoryReportItem {
     pub low_stock_threshold: i64,
     pub unit: String,
     pub price: i64,
+    pub purchase_price: i64,
     pub value: i64,
 }
 
@@ -74,11 +79,33 @@ pub async fn get_dashboard(db: State<'_, crate::database::Db>, _auth: Option<Str
     .fetch_one(&pool)
     .await?;
 
+    let profit_today: i64 = sqlx::query_scalar!(
+        "SELECT COALESCE(SUM(ii.line_total - ii.purchase_price * ii.quantity), 0) FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE date(i.created_at) = ?",
+        today
+    )
+    .fetch_one(&pool)
+    .await?;
+
+    let profit_7d: i64 = sqlx::query_scalar!(
+        "SELECT COALESCE(SUM(ii.line_total - ii.purchase_price * ii.quantity), 0) FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.created_at >= datetime('now', '-7 days')"
+    )
+    .fetch_one(&pool)
+    .await?;
+
+    let profit_30d: i64 = sqlx::query_scalar!(
+        "SELECT COALESCE(SUM(ii.line_total - ii.purchase_price * ii.quantity), 0) FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.created_at >= datetime('now', '-30 days')"
+    )
+    .fetch_one(&pool)
+    .await?;
+
     Ok(DashboardStats {
         total_sales_today,
         total_invoices_today,
         low_stock_count,
         outstanding_balance,
+        profit_today,
+        profit_7d,
+        profit_30d,
     })
 }
 
@@ -95,16 +122,18 @@ pub async fn get_sales_report(db: State<'_, crate::database::Db>, input: SalesRe
     let rows = sqlx::query!(
         r#"
         SELECT 
-            date(created_at) as date,
-            SUM(total) as total_sales,
+            date(i.created_at) as date,
+            SUM(i.total) as total_sales,
             COUNT(*) as invoice_count,
-            SUM(CASE WHEN payment_method = 'cash' THEN total ELSE 0 END) as cash_sales,
-            SUM(CASE WHEN payment_method = 'credit' THEN total ELSE 0 END) as credit_sales,
-            SUM(CASE WHEN payment_method = 'bank' THEN total ELSE 0 END) as bank_sales
-        FROM invoices
-        WHERE date(created_at) BETWEEN ? AND ?
-        GROUP BY date(created_at)
-        ORDER BY date(created_at)
+            SUM(CASE WHEN i.payment_method = 'cash' THEN i.total ELSE 0 END) as cash_sales,
+            SUM(CASE WHEN i.payment_method = 'credit' THEN i.total ELSE 0 END) as credit_sales,
+            SUM(CASE WHEN i.payment_method = 'bank' THEN i.total ELSE 0 END) as bank_sales,
+            COALESCE(SUM(ii.line_total - ii.purchase_price * ii.quantity), 0) as profit
+        FROM invoices i
+        LEFT JOIN invoice_items ii ON ii.invoice_id = i.id
+        WHERE date(i.created_at) BETWEEN ? AND ?
+        GROUP BY date(i.created_at)
+        ORDER BY date(i.created_at)
         "#,
         from, to
     )
@@ -118,6 +147,7 @@ pub async fn get_sales_report(db: State<'_, crate::database::Db>, input: SalesRe
         cash_sales: r.cash_sales,
         credit_sales: r.credit_sales,
         bank_sales: r.bank_sales,
+        profit: r.profit,
     }).collect();
 
     Ok(report)
@@ -128,8 +158,8 @@ pub async fn get_inventory_report(db: State<'_, crate::database::Db>, _auth: Opt
     let pool = db.pool().await;
     let rows = sqlx::query!(
         r#"
-        SELECT id, name, sku, category, stock_qty, low_stock_threshold, unit, price,
-               (stock_qty * price) as value
+        SELECT id, name, sku, category, stock_qty, low_stock_threshold, unit, price, purchase_price,
+               (MAX(0, stock_qty) * price) as value
         FROM products
         WHERE is_published = 1
         ORDER BY category, name
@@ -147,6 +177,7 @@ pub async fn get_inventory_report(db: State<'_, crate::database::Db>, _auth: Opt
         low_stock_threshold: r.low_stock_threshold,
         unit: r.unit,
         price: r.price,
+        purchase_price: r.purchase_price,
         value: r.value,
     }).collect();
 

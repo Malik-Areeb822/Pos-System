@@ -36,6 +36,7 @@ pub struct CreateInvoiceItemInputCmd {
     pub unit: String,
     pub unit_price: i64,
     pub line_total: i64,
+    pub purchase_price: i64,
     pub total_area: Option<f64>,
 }
 
@@ -75,7 +76,7 @@ pub async fn create_invoice(app: AppHandle, db: State<'_, crate::database::Db>, 
     if input.discount < 0 {
         return Err(AppError::Validation("Discount cannot be negative".into()));
     }
-    if input.subtotal < 0 || input.total < 0 {
+    if input.subtotal < 0 {
         return Err(AppError::Validation(
             "Invoice amounts cannot be negative".into(),
         ));
@@ -120,6 +121,7 @@ pub async fn create_invoice(app: AppHandle, db: State<'_, crate::database::Db>, 
             unit: item.unit,
             unit_price: item.unit_price,
             line_total: item.line_total,
+            purchase_price: item.purchase_price,
             total_area: item.total_area,
         }).collect(),
     };

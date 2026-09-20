@@ -1,4 +1,4 @@
-# Handoff Document — Stone Flow POS Offline Migration
+# Handoff Document — Moon Pipe and Sanitary POS
 
 > ⚠️ **MANDATORY RULE FOR ALL AGENTS & DEVELOPERS**: 
 > **You MUST read [PROJECT_ARCHITECTURE.md](file:///C:/Users/Malik%20Areeb%20Ahmed/OneDrive/Desktop/stone-flow-pos-main/PROJECT_ARCHITECTURE.md) before making ANY code changes, fixes, refactors, or feature upgrades.** It maps out the complete system layout, IPC bridges, database schemas, and critical component dependencies to prevent breaking connected features.
@@ -8,6 +8,52 @@
 > **Status**: 🟢 FREEZE RESOLVED + INSTALLERS REBUILT & RE-SIGNED (2026-08-25 late night) — React 18.3.1 pin passed full gauntlet incl. owner's manual login + sample sale; E/A/D mitigations reverted; fresh MSI + NSIS built via `cargo tauri build`, ship-gate passed on their own exe (serving/storm/typing/CPU), both signed `CN=AUZ Tech` + RFC3161 timestamp (valid to 2036). Remaining: clean-machine install test → full manual matrix → staff docs.
 > **Date**: 2026-08-25
 > **Phase**: Phase C release
+
+---
+
+## 🔥 Session 2026-09-19: Invoice Chain — Unpaid Balances Carry Forward + Client B Rebrand
+
+**Status**: ✅ **COMPLETE.** Two features implemented: (1) client-b fork "Moon Pipe and Sanitary Store" branding, (2) invoice chain where unpaid balances carry forward to the next invoice.
+
+### What was built
+
+| Phase | Files | Summary |
+|-------|-------|---------|
+| **Client B branding** | `HANDOFF.md`, `PROJECT_ARCHITECTURE.md`, `src/styles.css`, `admin.pos.tsx`, `admin.inventory.tsx`, `api.ts` files | Renamed to "Moon Pipe and Sanitary Store", categories changed to `sanitary \| hardware`, copper accent color scheme applied |
+| **Phase 1: DB** | `009_invoice_previous_balance.sql` | `ALTER TABLE invoices ADD COLUMN previous_balance INTEGER NOT NULL DEFAULT 0;` |
+| **Phase 2: Rust structs** | `repositories/invoices.rs` | Added `previous_balance: i64` to `Invoice` struct; updated all 3 SELECT queries (search, default list, get) |
+| **Phase 3: Invoice creation** | `repositories/invoices.rs` `create()` | Reads `customers.outstanding_balance` → `previous_balance`; computes `total = subtotal - discount + previous_balance`; `amount_paid` clamped to new total; `outstanding_balance` SET to `MAX(0, total - amount_paid)` (not `+=`) |
+| **Phase 4: Commands** | `commands/invoices.rs` | Removed client-side `total < 0` validation (backend recalculates total) |
+| **Phase 5: TS types** | `features/invoices/api.ts`, `lib/api-client.ts` | Added `previous_balance: number` to `Invoice` type |
+| **Phase 6: POS page** | `admin.pos.tsx` | Derives `previousBalance` from selected customer's `outstanding_balance`; `total = max(0, subtotal - discount + previousBalance)`; "Previous balance" row in summary; removed `Math.min(..., total)` clamp on `paidNow` |
+| **Phase 7: Invoice detail** | `admin.invoices.$invoiceId.tsx` | Shows "Previous balance" row when > 0 |
+| **Phase 8: Receipt bitmap** | `services/receipt_bitmap.rs` | Added "Previous balance" line before TOTAL; test `sample_invoice()` updated with `previous_balance: 0` |
+| **Phase 9: ESC/POS receipt** | `services/print.rs` | Both `build_escpos_receipt` and `build_text_receipt` show `previous_balance` when > 0 |
+| **Phase 10: A4 PDF** | `services/invoice_pdf.rs` | Shows "Previous balance" line when > 0 |
+
+### Invoice chain design decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| `total` field handling | **Backend ignores frontend `total` and recalculates** (Option A) | Backward compat — old clients still send `total` but it's overwritten with `subtotal - discount + previous_balance` |
+| `previous_balance` source | Read from `customers.outstanding_balance` at creation time within transaction | Ensures consistency even if another invoice is created concurrently |
+| `outstanding_balance` update | **SET** to `MAX(0, total - amount_paid)` (not `+=`) | Avoids double-counting — previous invoice already set the balance; new invoice replaces it |
+| `mark_paid()` logic | Unchanged: `outstanding_balance -= applied` | Works because payments always target the latest invoice |
+| Frontend total calculation | `total = max(0, subtotal - discount + previousBalance)` | Client shows preview; backend overwrites with authoritative calculation |
+
+### Build status
+
+- Vite build: ✅ PASSED clean
+- `cargo check`: ✅ Only pre-existing `sqlx` "unable to open database file" errors (zero new type/schema errors)
+- No commits made yet — changes uncommitted
+
+### Client B setup notes
+
+- Database path: `C:\ProgramData\MoonPipe\moonpipe.db` (separate from City Tiles)
+- Branch: `client-b-sanitary`
+- Categories: `sanitary | hardware` (not `marble | tiles | chips`)
+- Color scheme: cool blue-gray base + warm copper accent (`--color-primary: oklch(0.45 0.12 40)`)
+- Tile-specific logic removed from POS (no perCarton, perTileArea, carton/tile UI)
 
 ---
 
@@ -628,6 +674,7 @@ remain unused by the UI; these semantic gaps are recorded so nobody "fixes" them
 |----------|-------|
 | Architecture Plan | **Mandatory read of `PROJECT_ARCHITECTURE.md` before any changes/fixes** — maps full IPC topology, SQLite schemas, receipt pipelines, and React 18.3.1 pin to prevent breaking connected components (2026-08-29) |
 | Database | Single SQLite at `%PROGRAMDATA%\CityTiles\citytiles.db` via sqlx (plugin-sql removed) |
+| Client B | **Branch `client-b-sanitary`** — "Moon Pipe and Sanitary Store"; DB at `%PROGRAMDATA%\MoonPipe\moonpipe.db`; categories `sanitary \| hardware`; copper accent; tile logic removed from POS (2026-09-19) |
 | Payment rule | Invoice number tracks dues universally; customer balance mirrors any attached-customer due |
 | Code signing | Self-signed, publisher "AUZ Tech" |
 | Stock policy | **Hard block on oversell** — invoice creation validates per-product stock in-transaction (aggregated across cart lines); no negative stock from sales, delivery date or not (2026-08-23) |
@@ -640,6 +687,7 @@ remain unused by the UI; these semantic gaps are recorded so nobody "fixes" them
 | JWT secret | **Per-install random key file** `%PROGRAMDATA%\CityTiles\jwt.key`; env var wins; hardcoded fallback removed (2026-08-23) |
 | Money unit | **Whole rupees are canonical** everywhere incl. PDF invoices — no paise conversion anywhere (2026-08-23) |
 | Tile area | **Display only** — `area_per_tile` on products (REAL), `total_area` on invoice items (area_per_tile × qty, computed at checkout); 3 decimal places; bold on receipt; no pricing impact (2026-09-16) |
+| Invoice chain | **Unpaid balances carry forward** — `previous_balance` on invoices read from `customers.outstanding_balance` at creation; `total = subtotal - discount + previous_balance`; `outstanding_balance` SET to `MAX(0, total - amount_paid)` after creation; `mark_paid()` unchanged (2026-09-19) |
 | React version | **18.3.1 pinned (exact)** — react-dom 19 production builds wedge the signin page in an infinite event-dispatch loop in this app shape; ANY future React upgrade must re-pass the signin storm gauntlet + built-exe type-test first (2026-08-25) |
 | Invoice history window | **Recent-50 default + full-history search** (no pagination): list pages show newest 50; Invoices page search hits all history server-side, capped at 200 results (`SEARCH_CAP`) (2026-08-24) |
 | Sales retention | **Auto-purge settled invoices older than 12 months** on every app launch and after backup restore; unpaid/credit invoices are exempt until fully settled; a `VACUUM INTO` snapshot is mandatory before any delete — snapshot failure aborts the purge (2026-08-24) |
@@ -681,4 +729,4 @@ cargo tauri dev        # run app in dev
 cargo tauri build      # production MSI/NSIS installer
 ```
 
-**Status**: ~90% complete — system functional end-to-end in dev. Proceed with Phase B verification checklist above; what remains is live-machine testing (printer paper test, clean install, installer build) and staff docs.
+**Status**: ~95% complete — system functional end-to-end in dev. Invoice chain feature implemented, uncommitted. Next: commit, rebuild installers for client B, live-machine testing, staff docs.

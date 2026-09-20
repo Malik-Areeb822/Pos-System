@@ -13,6 +13,7 @@ pub struct Invoice {
     pub subtotal: i64,
     pub discount: i64,
     pub total: i64,
+    pub previous_balance: i64,
     pub amount_paid: i64,
     pub payment_method: String,
     pub notes: Option<String>,
@@ -31,6 +32,7 @@ pub struct InvoiceItem {
     pub unit: String,
     pub unit_price: i64,
     pub line_total: i64,
+    pub purchase_price: i64,
     pub total_area: Option<f64>,
     pub created_at: String,
 }
@@ -57,6 +59,7 @@ pub struct CreateInvoiceItemInput {
     pub unit: String,
     pub unit_price: i64,
     pub line_total: i64,
+    pub purchase_price: i64,
     pub total_area: Option<f64>,
 }
 
@@ -84,7 +87,7 @@ impl InvoiceRepository {
             // (case-insensitive), newest first, capped.
             sqlx::query_as_unchecked!(
                 Invoice,
-                r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices
+                r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices
                    WHERE LOWER(invoice_no) LIKE '%' || LOWER(?) || '%'
                       OR LOWER(customer_name) LIKE '%' || LOWER(?) || '%'
                    ORDER BY created_at DESC LIMIT ?"#,
@@ -97,7 +100,7 @@ impl InvoiceRepository {
         } else {
             sqlx::query_as_unchecked!(
                 Invoice,
-                r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices ORDER BY created_at DESC LIMIT ? OFFSET ?"#,
+                r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices ORDER BY created_at DESC LIMIT ? OFFSET ?"#,
                 limit, offset
             )
             .fetch_all(&self.pool)
@@ -109,7 +112,7 @@ impl InvoiceRepository {
     pub async fn get(&self, id: &str) -> Result<Option<Invoice>, AppError> {
         let invoice = sqlx::query_as_unchecked!(
             Invoice,
-            r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices WHERE id = ?"#,
+            r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices WHERE id = ?"#,
             id
         )
         .fetch_optional(&self.pool)
@@ -130,7 +133,7 @@ impl InvoiceRepository {
     pub async fn get_items(&self, invoice_id: &str) -> Result<Vec<InvoiceItem>, AppError> {
         let items = sqlx::query_as_unchecked!(
             InvoiceItem,
-            r#"SELECT id, invoice_id, product_id, product_name, quantity, unit, unit_price, line_total, total_area, created_at FROM invoice_items WHERE invoice_id = ?"#,
+            r#"SELECT id, invoice_id, product_id, product_name, quantity, unit, unit_price, line_total, purchase_price, total_area, created_at FROM invoice_items WHERE invoice_id = ?"#,
             invoice_id
         )
         .fetch_all(&self.pool)
@@ -141,58 +144,33 @@ impl InvoiceRepository {
     pub async fn create(&self, input: CreateInvoiceInput) -> Result<Invoice, AppError> {
         let mut tx = self.pool.begin().await?;
 
-        // Stock availability guard (hard block): aggregate wanted quantities
-        // per product across all cart lines — the same product may appear on
-        // several lines — then compare once against live stock inside this
-        // transaction. Overselling can never drive stock negative.
-        {
-            let mut wanted: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
-            for item in &input.items {
-                if let Some(pid) = &item.product_id {
-                    *wanted.entry(pid.clone()).or_insert(0) += item.quantity;
-                }
-            }
-            let mut shortfalls: Vec<String> = Vec::new();
-            for (pid, qty) in &wanted {
-                if *qty <= 0 {
-                    continue;
-                }
-                if let Some(p) = sqlx::query!(
-                    "SELECT name, stock_qty FROM products WHERE id = ?",
-                    pid
-                )
-                .fetch_optional(&mut *tx)
-                .await?
-                {
-                    if p.stock_qty < *qty {
-                        shortfalls.push(format!(
-                            "\"{}\" — in stock: {}, tried: {}",
-                            p.name, p.stock_qty, qty
-                        ));
-                    }
-                }
-            }
-            if !shortfalls.is_empty() {
-                return Err(AppError::Validation(format!(
-                    "Not enough stock: {}",
-                    shortfalls.join("; ")
-                )));
-            }
-        }
-
         // Get next invoice number
         let invoice_no = get_next_invoice_no(&mut tx).await?;
         
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
-        let default_paid = if input.payment_method == "credit" { 0 } else { input.total };
-        let amount_paid = input.amount_paid.unwrap_or(default_paid).clamp(0, input.total);
-        let due = input.total - amount_paid;
+
+        // Read the customer's current outstanding balance and carry it forward.
+        let previous_balance: i64 = if let Some(cid) = &input.customer_id {
+            sqlx::query_scalar!("SELECT outstanding_balance FROM customers WHERE id = ?", cid)
+                .fetch_optional(&mut *tx)
+                .await?
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
+        // Total = new items + carried balance.  The frontend may also send
+        // `input.total`, but we ignore it — the backend is source of truth.
+        let total = input.subtotal.saturating_sub(input.discount) + previous_balance;
+        let default_paid = if input.payment_method == "credit" { 0 } else { total };
+        let amount_paid = input.amount_paid.unwrap_or(default_paid).clamp(0, total);
+        let due = total - amount_paid;
 
         sqlx::query!(
-            r#"INSERT INTO invoices (id, invoice_no, customer_id, customer_name, subtotal, discount, total, amount_paid, payment_method, notes, delivery_date, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
-            id, invoice_no, input.customer_id, input.customer_name, input.subtotal, input.discount, input.total, amount_paid, input.payment_method, input.notes, input.delivery_date, now, now
+            r#"INSERT INTO invoices (id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+            id, invoice_no, input.customer_id, input.customer_name, input.subtotal, input.discount, total, previous_balance, amount_paid, input.payment_method, input.notes, input.delivery_date, now, now
         )
         .execute(&mut *tx)
         .await?;
@@ -200,9 +178,9 @@ impl InvoiceRepository {
         for item in input.items {
             let item_id = Uuid::new_v4().to_string();
             sqlx::query!(
-                r#"INSERT INTO invoice_items (id, invoice_id, product_id, product_name, quantity, unit, unit_price, line_total, total_area, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
-                item_id, id, item.product_id, item.product_name, item.quantity, item.unit, item.unit_price, item.line_total, item.total_area, now
+                r#"INSERT INTO invoice_items (id, invoice_id, product_id, product_name, quantity, unit, unit_price, line_total, purchase_price, total_area, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+                item_id, id, item.product_id, item.product_name, item.quantity, item.unit, item.unit_price, item.line_total, item.purchase_price, item.total_area, now
             )
             .execute(&mut *tx)
             .await?;
@@ -215,13 +193,13 @@ impl InvoiceRepository {
             }
         }
 
-        // Mirror any due onto the customer's outstanding balance (any method)
-        if due > 0 {
-            if let Some(customer_id) = &input.customer_id {
-                sqlx::query!("UPDATE customers SET outstanding_balance = outstanding_balance + ? WHERE id = ?", due, customer_id)
-                    .execute(&mut *tx)
-                    .await?;
-            }
+        // Set the customer's outstanding balance to the new due amount
+        // (not += — each invoice carries the full chain, so the latest
+        // invoice's due IS the customer's total outstanding).
+        if let Some(customer_id) = &input.customer_id {
+            sqlx::query!("UPDATE customers SET outstanding_balance = MAX(0, ?) WHERE id = ?", due, customer_id)
+                .execute(&mut *tx)
+                .await?;
         }
 
         tx.commit().await?;
