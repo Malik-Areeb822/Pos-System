@@ -297,7 +297,10 @@ pub fn render_receipt(
     draw_centered(&mut c, &banner, business.name.trim());
 
     let small = TextStyle { font: &fonts.karla_regular, size: 26.0, leading: 12.0 };
-    draw_centered(&mut c, &small, business.address.trim());
+    for branch in &business.branches {
+        let line = format!("{}: {}", branch.label, branch.address);
+        draw_centered(&mut c, &small, line.trim());
+    }
     draw_centered(&mut c, &small, business.phone.trim());
 
     c.push_blank(14);
@@ -487,6 +490,7 @@ mod tests {
             quantity: 2,
             unit: "sqft".into(),
             unit_price: 2250,
+            purchase_price: 0,
             line_total: 4500,
             total_area: None,
             created_at: String::new(),

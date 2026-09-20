@@ -14,14 +14,19 @@ const RECEIPT_WIDTH: usize = 48;
 
 /// Fallback business identity printed on every receipt. Mirrors
 /// `src/lib/business.ts`; the frontend normally sends this explicitly.
-const DEFAULT_BUSINESS_NAME: &str = "Moon Pipe";
-const DEFAULT_BUSINESS_ADDRESS: &str = "Mansehra Road, Abbottabad, Khyber Pakhtunkhwa";
-const DEFAULT_BUSINESS_PHONE: &str = "0334 5333447";
+const DEFAULT_BUSINESS_NAME: &str = "Moon Pipe and Sanitary Store";
+const DEFAULT_BUSINESS_PHONE: &str = "0312-1584181 | 0312-9906468";
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct BranchInfo {
+    pub label: String,
+    pub address: String,
+}
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct ReceiptBusiness {
     pub name: String,
-    pub address: String,
+    pub branches: Vec<BranchInfo>,
     pub phone: String,
 }
 
@@ -29,7 +34,16 @@ impl Default for ReceiptBusiness {
     fn default() -> Self {
         Self {
             name: DEFAULT_BUSINESS_NAME.to_string(),
-            address: DEFAULT_BUSINESS_ADDRESS.to_string(),
+            branches: vec![
+                BranchInfo {
+                    label: "Branch 1".into(),
+                    address: "Near Sethi Masjid Supply, Mansehra Road, Atd".into(),
+                },
+                BranchInfo {
+                    label: "Branch 2".into(),
+                    address: "Murree Road, Kalapul, Opp Noor Masjid, Atd".into(),
+                },
+            ],
             phone: DEFAULT_BUSINESS_PHONE.to_string(),
         }
     }
@@ -375,9 +389,13 @@ fn build_escpos_receipt(
     data.push(b'\n');
     data.extend_from_slice(&[GS, b'!', 0x00]); // normal size
 
-    // Address + phone — the printer centers them (no manual padding).
-    data.extend_from_slice(business.address.trim().as_bytes());
-    data.push(b'\n');
+    // Branches — each on its own line, centered.
+    for branch in &business.branches {
+        let line = format!("{}: {}", branch.label, branch.address);
+        data.extend_from_slice(line.trim().as_bytes());
+        data.push(b'\n');
+    }
+    // Phone numbers on a single centered line.
     data.extend_from_slice(business.phone.trim().as_bytes());
     data.push(b'\n');
 
@@ -457,7 +475,10 @@ fn build_text_receipt(
 ) -> String {
     let mut out = String::new();
     out.push_str(&center_wrapped(DEFAULT_BUSINESS_NAME));
-    out.push_str(&center_wrapped(DEFAULT_BUSINESS_ADDRESS));
+    let default_branches = ReceiptBusiness::default().branches;
+    for branch in &default_branches {
+        out.push_str(&center_wrapped(&format!("{}: {}", branch.label, branch.address)));
+    }
     out.push_str(&center_wrapped(DEFAULT_BUSINESS_PHONE));
     out.push_str(&rule('='));
     out.push_str(&two_col("Invoice", &inv.invoice_no));
@@ -574,11 +595,12 @@ mod tests {
 
     #[test]
     fn center_wraps_long_addresses_on_word_boundaries() {
-        let out = center_wrapped(DEFAULT_BUSINESS_ADDRESS);
+        let addr = "Near Sethi Masjid Supply, Mansehra Road, Atd";
+        let out = center_wrapped(addr);
         for line in out.lines() {
             assert!(line.chars().count() <= RECEIPT_WIDTH);
         }
-        assert_eq!(out.split_whitespace().collect::<Vec<_>>().join(" "), DEFAULT_BUSINESS_ADDRESS);
+        assert_eq!(out.split_whitespace().collect::<Vec<_>>().join(" "), addr);
     }
 
     #[test]

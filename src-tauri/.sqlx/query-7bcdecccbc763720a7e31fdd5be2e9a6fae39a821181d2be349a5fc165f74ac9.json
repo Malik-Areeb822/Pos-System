@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT outstanding_balance FROM customers WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "outstanding_balance",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7bcdecccbc763720a7e31fdd5be2e9a6fae39a821181d2be349a5fc165f74ac9"
+}

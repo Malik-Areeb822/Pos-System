@@ -113,7 +113,11 @@ function InvoiceDetailPage() {
           <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-6">
             <div>
               <h2 className="font-display text-3xl">{BUSINESS.name}</h2>
-              <p className="mt-1 text-xs text-muted-foreground">{BUSINESS.address}</p>
+              {BUSINESS.branches.map((b) => (
+                <p key={b.label} className="mt-1 text-xs text-muted-foreground">
+                  {b.label}: {b.address}
+                </p>
+              ))}
               <p className="text-xs text-muted-foreground">
                 {BUSINESS.phone} · {BUSINESS.email}
               </p>

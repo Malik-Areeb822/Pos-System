@@ -4,8 +4,6 @@
 
 PRAGMA foreign_keys = OFF;
 
-BEGIN TRANSACTION;
-
 -- 1. Create new table with updated CHECK constraint
 CREATE TABLE products_new (
     id TEXT PRIMARY KEY,
@@ -44,7 +42,5 @@ ALTER TABLE products_new RENAME TO products;
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
 CREATE INDEX IF NOT EXISTS idx_products_published ON products(is_published);
-
-COMMIT;
 
 PRAGMA foreign_keys = ON;

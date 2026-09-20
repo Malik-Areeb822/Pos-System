@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(SUM(quantity), 0) AS q FROM returns WHERE invoice_id = ? AND product_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "q",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "57d134ca950f0ebf9f6c9b2841355a47c7c7352daf0012eacacdc169943d29a5"
+}

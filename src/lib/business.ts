@@ -2,10 +2,17 @@
 export const BUSINESS = {
   name: "Moon Pipe and Sanitary Store",
   short: "Moon Pipe",
-  phone: "0334 5333447",
-  phoneHref: "tel:+923345333447",
-  whatsapp: "https://wa.me/923345333447",
+  branches: [
+    {
+      label: "Branch 1",
+      address: "Near Sethi Masjid Supply, Mansehra Road, Atd",
+    },
+    {
+      label: "Branch 2",
+      address: "Murree Road, Kalapul, Opp Noor Masjid, Atd",
+    },
+  ],
+  phone: "0312-1584181 | 0312-9906468",
   email: "sales@moonpipe.com.pk",
-  address: "Mansehra Road, Abbottabad, Khyber Pakhtunkhwa",
   hours: "Mon – Sat · 8:00 am – 7:00 pm",
 };

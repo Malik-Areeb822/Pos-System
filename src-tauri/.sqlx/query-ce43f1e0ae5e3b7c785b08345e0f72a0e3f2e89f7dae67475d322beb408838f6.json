@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(SUM(ii.line_total - ii.purchase_price * ii.quantity), 0) FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.created_at >= datetime('now', '-30 days')",
+  "describe": {
+    "columns": [
+      {
+        "name": "COALESCE(SUM(ii.line_total - ii.purchase_price * ii.quantity), 0)",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ce43f1e0ae5e3b7c785b08345e0f72a0e3f2e89f7dae67475d322beb408838f6"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE invoices SET subtotal = ?, total = ?, amount_paid = ?, updated_at = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "271ee8df5cf1708f8f3779c754ba608fd451beb95b3e49466f50610f9460efad"
+}

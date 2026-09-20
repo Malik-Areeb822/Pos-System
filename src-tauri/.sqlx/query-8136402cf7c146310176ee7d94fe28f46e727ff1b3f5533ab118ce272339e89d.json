@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE products SET name = ?, sku = ?, category = ?, description = ?, color = ?, size = ?, finish = ?, company = ?, unit = ?, price = ?, purchase_price = ?, pieces_per_carton = ?, area_per_tile = ?, stock_qty = ?, low_stock_threshold = ?, image_url = ?, is_published = ?, updated_at = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 19
+    },
+    "nullable": []
+  },
+  "hash": "8136402cf7c146310176ee7d94fe28f46e727ff1b3f5533ab118ce272339e89d"
+}

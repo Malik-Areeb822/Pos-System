@@ -65,7 +65,11 @@ fn sanitize_filename(name: &str) -> String {
 
 fn build_invoice_content(doc: &mut Document, inv: &crate::repositories::invoices::Invoice, items: &[crate::repositories::invoices::InvoiceItem]) {
     // Header
-    doc.push(elements::Paragraph::new("CITY TILES POS"));
+    doc.push(elements::Paragraph::new("Moon Pipe and Sanitary Store"));
+    doc.push(elements::Break::new(1));
+    doc.push(elements::Paragraph::new("Branch 1: Near Sethi Masjid Supply, Mansehra Road, Atd"));
+    doc.push(elements::Paragraph::new("Branch 2: Murree Road, Kalapul, Opp Noor Masjid, Atd"));
+    doc.push(elements::Paragraph::new("0312-1584181 | 0312-9906468"));
     doc.push(elements::Break::new(1));
     doc.push(elements::Paragraph::new("TAX INVOICE"));
     doc.push(elements::Break::new(1));

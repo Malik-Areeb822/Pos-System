@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, invoice_id, product_id, product_name, quantity, unit, unit_price, line_total, created_at FROM invoice_items WHERE invoice_id = ?",
+  "query": "SELECT id, invoice_id, product_id, product_name, quantity, unit, unit_price, line_total, purchase_price, total_area, created_at FROM invoice_items WHERE invoice_id = ?",
   "describe": {
     "columns": [
       {
@@ -44,8 +44,18 @@
         "type_info": "Integer"
       },
       {
-        "name": "created_at",
+        "name": "purchase_price",
         "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "total_area",
+        "ordinal": 9,
+        "type_info": "Float"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 10,
         "type_info": "Text"
       }
     ],
@@ -61,8 +71,10 @@
       false,
       false,
       false,
+      false,
+      true,
       false
     ]
   },
-  "hash": "7a297d494e8798a909f7be3e76d104e945464f7605cc226496b65ba88c319186"
+  "hash": "a2b2c721e3f501c1795725e7c5b297dfd070f03496be2807d026271176a806c0"
 }

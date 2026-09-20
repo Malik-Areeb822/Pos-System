@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO products (id, name, sku, category, description, color, size, finish, company, unit, price, purchase_price, pieces_per_carton, area_per_tile, stock_qty, low_stock_threshold, image_url, is_published, created_at, updated_at)\n               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 20
+    },
+    "nullable": []
+  },
+  "hash": "1df463af7a0dfbc13aa23bcde8f3e5883ed609a5c71bade5775f4b26e31b5bda"
+}

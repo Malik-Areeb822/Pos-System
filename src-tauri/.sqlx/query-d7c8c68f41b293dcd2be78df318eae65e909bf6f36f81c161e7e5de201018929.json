@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices ORDER BY created_at DESC LIMIT ? OFFSET ?",
+  "query": "SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices\n                   WHERE LOWER(invoice_no) LIKE '%' || LOWER(?) || '%'\n                      OR LOWER(customer_name) LIKE '%' || LOWER(?) || '%'\n                   ORDER BY created_at DESC LIMIT ?",
   "describe": {
     "columns": [
       {
@@ -39,43 +39,49 @@
         "type_info": "Integer"
       },
       {
-        "name": "amount_paid",
+        "name": "previous_balance",
         "ordinal": 7,
         "type_info": "Integer"
       },
       {
-        "name": "payment_method",
+        "name": "amount_paid",
         "ordinal": 8,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "notes",
+        "name": "payment_method",
         "ordinal": 9,
         "type_info": "Text"
       },
       {
-        "name": "delivery_date",
+        "name": "notes",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "delivery_date",
         "ordinal": 11,
         "type_info": "Text"
       },
       {
-        "name": "updated_at",
+        "name": "created_at",
         "ordinal": 12,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 13,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 3
     },
     "nullable": [
       true,
       false,
       true,
+      false,
       false,
       false,
       false,
@@ -88,5 +94,5 @@
       false
     ]
   },
-  "hash": "2f0aba4dc714dba180ddde7b3a73d85a546f6df0455a7a864cd6262acc291ff8"
+  "hash": "d7c8c68f41b293dcd2be78df318eae65e909bf6f36f81c161e7e5de201018929"
 }

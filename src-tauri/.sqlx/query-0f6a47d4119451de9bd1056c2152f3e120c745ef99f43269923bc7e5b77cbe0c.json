@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, name, sku, category, description, color, size, finish, unit, price, pieces_per_carton, stock_qty, low_stock_threshold, image_url, is_published, created_at, updated_at FROM products WHERE id = ?",
+  "query": "SELECT id, name, sku, category, description, color, size, finish, company, unit, price, purchase_price, pieces_per_carton, area_per_tile, stock_qty, low_stock_threshold, image_url, is_published, created_at, updated_at FROM products ORDER BY name",
   "describe": {
     "columns": [
       {
@@ -44,53 +44,68 @@
         "type_info": "Text"
       },
       {
-        "name": "unit",
+        "name": "company",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "price",
+        "name": "unit",
         "ordinal": 9,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "pieces_per_carton",
+        "name": "price",
         "ordinal": 10,
         "type_info": "Integer"
       },
       {
-        "name": "stock_qty",
+        "name": "purchase_price",
         "ordinal": 11,
         "type_info": "Integer"
       },
       {
-        "name": "low_stock_threshold",
+        "name": "pieces_per_carton",
         "ordinal": 12,
         "type_info": "Integer"
       },
       {
-        "name": "image_url",
+        "name": "area_per_tile",
         "ordinal": 13,
-        "type_info": "Text"
+        "type_info": "Float"
       },
       {
-        "name": "is_published",
+        "name": "stock_qty",
         "ordinal": 14,
         "type_info": "Integer"
       },
       {
-        "name": "created_at",
+        "name": "low_stock_threshold",
         "ordinal": 15,
+        "type_info": "Integer"
+      },
+      {
+        "name": "image_url",
+        "ordinal": 16,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_published",
+        "ordinal": 17,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 18,
         "type_info": "Text"
       },
       {
         "name": "updated_at",
-        "ordinal": 16,
+        "ordinal": 19,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 0
     },
     "nullable": [
       true,
@@ -101,8 +116,11 @@
       true,
       true,
       true,
+      true,
       false,
       false,
+      true,
+      true,
       true,
       false,
       false,
@@ -112,5 +130,5 @@
       false
     ]
   },
-  "hash": "36aa61edb47ae332f058427fc6f71eb1395c93e20578497f15cc4f2a53ba68ba"
+  "hash": "0f6a47d4119451de9bd1056c2152f3e120c745ef99f43269923bc7e5b77cbe0c"
 }

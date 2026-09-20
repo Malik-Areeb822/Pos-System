@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT \n            date(i.created_at) as date,\n            SUM(i.total) as total_sales,\n            COUNT(*) as invoice_count,\n            SUM(CASE WHEN i.payment_method = 'cash' THEN i.total ELSE 0 END) as cash_sales,\n            SUM(CASE WHEN i.payment_method = 'credit' THEN i.total ELSE 0 END) as credit_sales,\n            SUM(CASE WHEN i.payment_method = 'bank' THEN i.total ELSE 0 END) as bank_sales,\n            COALESCE(SUM(ii.line_total - ii.purchase_price * ii.quantity), 0) as profit\n        FROM invoices i\n        LEFT JOIN invoice_items ii ON ii.invoice_id = i.id\n        WHERE date(i.created_at) BETWEEN ? AND ?\n        GROUP BY date(i.created_at)\n        ORDER BY date(i.created_at)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "date",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "total_sales",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "invoice_count",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "cash_sales",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "credit_sales",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "bank_sales",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "profit",
+        "ordinal": 6,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "24b9a8ca5fa7d12662eef861b19a44baa2f7e26cee4f6051ca83b13c0a62418b"
+}

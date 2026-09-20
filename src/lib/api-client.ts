@@ -546,7 +546,7 @@ export const api: ApiClient = {
           invoiceId: id,
           business: {
             name: BUSINESS.name,
-            address: BUSINESS.address,
+            branches: BUSINESS.branches,
             phone: BUSINESS.phone,
           },
         },

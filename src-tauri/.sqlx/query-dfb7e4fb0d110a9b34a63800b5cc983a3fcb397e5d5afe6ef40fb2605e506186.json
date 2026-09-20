@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT id, name, sku, category, stock_qty, low_stock_threshold, unit, price,\n               (stock_qty * price) as value\n        FROM products\n        WHERE is_published = 1\n        ORDER BY category, name\n        ",
+  "query": "\n        SELECT id, name, sku, category, stock_qty, low_stock_threshold, unit, price, purchase_price,\n               (MAX(0, stock_qty) * price) as value\n        FROM products\n        WHERE is_published = 1\n        ORDER BY category, name\n        ",
   "describe": {
     "columns": [
       {
@@ -44,8 +44,13 @@
         "type_info": "Integer"
       },
       {
-        "name": "value",
+        "name": "purchase_price",
         "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "value",
+        "ordinal": 9,
         "type_info": "Integer"
       }
     ],
@@ -61,8 +66,9 @@
       false,
       false,
       false,
-      false
+      true,
+      null
     ]
   },
-  "hash": "656a9ea97381308df25a642c0971cc057b066d7d1c7ebf19b3ad7423058cba6a"
+  "hash": "dfb7e4fb0d110a9b34a63800b5cc983a3fcb397e5d5afe6ef40fb2605e506186"
 }
