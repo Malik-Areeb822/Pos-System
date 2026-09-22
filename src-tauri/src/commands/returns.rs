@@ -54,5 +54,6 @@ pub async fn create_return(app: AppHandle, db: State<'_, crate::database::Db>, i
     
     crate::events::emit_invoices_changed(&app).await;
     crate::events::emit_products_changed(&app).await;
+    crate::events::emit_customers_changed(&app).await;
     Ok(ret)
 }

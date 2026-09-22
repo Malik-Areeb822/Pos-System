@@ -76,6 +76,11 @@ pub async fn create_invoice(app: AppHandle, db: State<'_, crate::database::Db>, 
     if input.discount < 0 {
         return Err(AppError::Validation("Discount cannot be negative".into()));
     }
+    if input.discount > input.subtotal {
+        return Err(AppError::Validation(
+            "Discount cannot exceed subtotal".into(),
+        ));
+    }
     if input.subtotal < 0 {
         return Err(AppError::Validation(
             "Invoice amounts cannot be negative".into(),

@@ -79,21 +79,70 @@ pub async fn get_dashboard(db: State<'_, crate::database::Db>, _auth: Option<Str
     .fetch_one(&pool)
     .await?;
 
-    let profit_today: i64 = sqlx::query_scalar!(
-        "SELECT COALESCE(SUM(ii.line_total - ii.purchase_price * ii.quantity), 0) FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE date(i.created_at) = ?",
-        today
+    let profit_today: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(
+           CASE WHEN i.subtotal = 0 THEN ii.line_total - ii.purchase_price * ii.quantity
+           ELSE ii.line_total * (i.subtotal - i.discount) / i.subtotal - ii.purchase_price * ii.quantity END
+         ), 0)
+         - COALESCE((
+           SELECT SUM(
+             CASE WHEN i2.subtotal = 0 THEN r.line_total - COALESCE(ii2.purchase_price, 0) * r.quantity
+             ELSE r.line_total * (i2.subtotal - i2.discount) / i2.subtotal - COALESCE(ii2.purchase_price, 0) * r.quantity END
+           )
+           FROM returns r
+           LEFT JOIN invoice_items ii2 ON ii2.invoice_id = r.invoice_id
+             AND (ii2.product_id = r.product_id
+                  OR (ii2.product_id IS NULL AND ii2.product_name = r.product_name))
+           LEFT JOIN invoices i2 ON i2.id = r.invoice_id
+           WHERE date(r.created_at) = ?
+         ), 0)
+         FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE date(i.created_at) = ?"
+    )
+    .bind(&today)
+    .bind(&today)
+    .fetch_one(&pool)
+    .await?;
+
+    let profit_7d: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(
+           CASE WHEN i.subtotal = 0 THEN ii.line_total - ii.purchase_price * ii.quantity
+           ELSE ii.line_total * (i.subtotal - i.discount) / i.subtotal - ii.purchase_price * ii.quantity END
+         ), 0)
+         - COALESCE((
+           SELECT SUM(
+             CASE WHEN i2.subtotal = 0 THEN r.line_total - COALESCE(ii2.purchase_price, 0) * r.quantity
+             ELSE r.line_total * (i2.subtotal - i2.discount) / i2.subtotal - COALESCE(ii2.purchase_price, 0) * r.quantity END
+           )
+           FROM returns r
+           LEFT JOIN invoice_items ii2 ON ii2.invoice_id = r.invoice_id
+             AND (ii2.product_id = r.product_id
+                  OR (ii2.product_id IS NULL AND ii2.product_name = r.product_name))
+           LEFT JOIN invoices i2 ON i2.id = r.invoice_id
+           WHERE r.created_at >= datetime('now', '-7 days')
+         ), 0)
+         FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.created_at >= datetime('now', '-7 days')"
     )
     .fetch_one(&pool)
     .await?;
 
-    let profit_7d: i64 = sqlx::query_scalar!(
-        "SELECT COALESCE(SUM(ii.line_total - ii.purchase_price * ii.quantity), 0) FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.created_at >= datetime('now', '-7 days')"
-    )
-    .fetch_one(&pool)
-    .await?;
-
-    let profit_30d: i64 = sqlx::query_scalar!(
-        "SELECT COALESCE(SUM(ii.line_total - ii.purchase_price * ii.quantity), 0) FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.created_at >= datetime('now', '-30 days')"
+    let profit_30d: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(
+           CASE WHEN i.subtotal = 0 THEN ii.line_total - ii.purchase_price * ii.quantity
+           ELSE ii.line_total * (i.subtotal - i.discount) / i.subtotal - ii.purchase_price * ii.quantity END
+         ), 0)
+         - COALESCE((
+           SELECT SUM(
+             CASE WHEN i2.subtotal = 0 THEN r.line_total - COALESCE(ii2.purchase_price, 0) * r.quantity
+             ELSE r.line_total * (i2.subtotal - i2.discount) / i2.subtotal - COALESCE(ii2.purchase_price, 0) * r.quantity END
+           )
+           FROM returns r
+           LEFT JOIN invoice_items ii2 ON ii2.invoice_id = r.invoice_id
+             AND (ii2.product_id = r.product_id
+                  OR (ii2.product_id IS NULL AND ii2.product_name = r.product_name))
+           LEFT JOIN invoices i2 ON i2.id = r.invoice_id
+           WHERE r.created_at >= datetime('now', '-30 days')
+         ), 0)
+         FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.created_at >= datetime('now', '-30 days')"
     )
     .fetch_one(&pool)
     .await?;
@@ -119,35 +168,51 @@ pub async fn get_sales_report(db: State<'_, crate::database::Db>, input: SalesRe
         chrono::Utc::now().format("%Y-%m-%d").to_string()
     });
 
-    let rows = sqlx::query!(
+    let rows = sqlx::query(
         r#"
-        SELECT 
+        SELECT
             date(i.created_at) as date,
             SUM(i.total) as total_sales,
-            COUNT(*) as invoice_count,
+            COUNT(DISTINCT i.id) as invoice_count,
             SUM(CASE WHEN i.payment_method = 'cash' THEN i.total ELSE 0 END) as cash_sales,
             SUM(CASE WHEN i.payment_method = 'credit' THEN i.total ELSE 0 END) as credit_sales,
             SUM(CASE WHEN i.payment_method = 'bank' THEN i.total ELSE 0 END) as bank_sales,
-            COALESCE(SUM(ii.line_total - ii.purchase_price * ii.quantity), 0) as profit
+            COALESCE(SUM(
+              CASE WHEN i.subtotal = 0 THEN ii.line_total - ii.purchase_price * ii.quantity
+              ELSE ii.line_total * (i.subtotal - i.discount) / i.subtotal - ii.purchase_price * ii.quantity END
+            ), 0)
+              - COALESCE((
+                SELECT SUM(
+                  CASE WHEN i2.subtotal = 0 THEN r.line_total - COALESCE(ii2.purchase_price, 0) * r.quantity
+                  ELSE r.line_total * (i2.subtotal - i2.discount) / i2.subtotal - COALESCE(ii2.purchase_price, 0) * r.quantity END
+                )
+                FROM returns r
+                LEFT JOIN invoice_items ii2 ON ii2.invoice_id = r.invoice_id
+                  AND (ii2.product_id = r.product_id
+                       OR (ii2.product_id IS NULL AND ii2.product_name = r.product_name))
+                LEFT JOIN invoices i2 ON i2.id = r.invoice_id
+                WHERE date(r.created_at) = date(i.created_at)
+              ), 0) as profit
         FROM invoices i
         LEFT JOIN invoice_items ii ON ii.invoice_id = i.id
         WHERE date(i.created_at) BETWEEN ? AND ?
         GROUP BY date(i.created_at)
         ORDER BY date(i.created_at)
-        "#,
-        from, to
+        "#
     )
+    .bind(&from)
+    .bind(&to)
     .fetch_all(&pool)
     .await?;
 
     let report = rows.into_iter().map(|r| SalesReportItem {
-        date: r.date.unwrap_or_default(),
-        total_sales: r.total_sales,
-        invoice_count: r.invoice_count,
-        cash_sales: r.cash_sales,
-        credit_sales: r.credit_sales,
-        bank_sales: r.bank_sales,
-        profit: r.profit,
+        date: r.get::<Option<String>, _>("date").unwrap_or_default(),
+        total_sales: r.get::<i64, _>("total_sales"),
+        invoice_count: r.get::<i64, _>("invoice_count"),
+        cash_sales: r.get::<i64, _>("cash_sales"),
+        credit_sales: r.get::<i64, _>("credit_sales"),
+        bank_sales: r.get::<i64, _>("bank_sales"),
+        profit: r.get::<i64, _>("profit"),
     }).collect();
 
     Ok(report)

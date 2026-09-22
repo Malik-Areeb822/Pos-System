@@ -60,12 +60,12 @@ function PosPage() {
   const subtotal = lines.reduce((acc, l) => acc + Number(l.product.price) * l.qty, 0);
   // A stray minus can never ADD money — discount is clamped to >= 0 and the
   // bill floors at zero.
-  const discountValue = Math.max(0, Number(discount) || 0);
+  const discountValue = Math.min(Math.max(0, Number(discount) || 0), subtotal);
   const previousBalance = customerId
     ? Math.max(0, Number(customers.find((c) => c.id === customerId)?.outstanding_balance ?? 0))
     : 0;
   const total = Math.max(0, subtotal - discountValue + previousBalance);
-  const paidNow = Math.max(0, Number(amountPaid) || 0);
+  const paidNow = Math.min(Math.max(0, Number(amountPaid) || 0), total);
   const balanceDue = total - paidNow;
 
   function addLine(product: Product) {
@@ -126,7 +126,8 @@ function PosPage() {
       const walkInName = walkIn.trim();
       if (!customer && saveWalkIn && walkInName && walkInName.toLowerCase() !== "walk-in customer") {
         const existing = customers.find(
-          (c) => c.name.trim().toLowerCase() === walkInName.toLowerCase(),
+          (c) => c.name.trim().toLowerCase() === walkInName.toLowerCase()
+            && (c.phone?.trim() || null) === (walkInPhone.trim() || null),
         );
         if (existing) {
           customer = existing;
@@ -346,7 +347,7 @@ function PosPage() {
                 <option value="">Walk-in / cash customer</option>
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {c.phone ? `${c.name} (${c.phone})` : c.name}
                   </option>
                 ))}
               </select>
@@ -396,6 +397,9 @@ function PosPage() {
                   value={discount}
                   onChange={(e) => setDiscount(e.target.value)}
                 />
+                {Number(discount) > subtotal && subtotal > 0 && (
+                  <p className="text-xs text-destructive">Capped at subtotal</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Amount paid</Label>
@@ -403,6 +407,9 @@ function PosPage() {
                   value={amountPaid}
                   onChange={(e) => setAmountPaid(e.target.value)}
                 />
+                {Number(amountPaid) > total && total > 0 && (
+                  <p className="text-xs text-destructive">Capped at total</p>
+                )}
               </div>
             </div>
 

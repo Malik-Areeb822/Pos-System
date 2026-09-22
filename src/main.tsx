@@ -11,6 +11,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000,
+      refetchInterval: 60 * 60 * 1000,
       retry: 1,
       refetchOnWindowFocus: false,
     },
@@ -93,7 +94,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} notFoundComponent={NotFoundComponent} errorComponent={ErrorComponent} />
-      <Toaster position="top-right" />
+      <Toaster position="top-right" closeButton />
     </QueryClientProvider>
   );
 }

@@ -199,6 +199,11 @@ pub async fn create_supplier_purchase(
     if input.discount < 0 {
         return Err(AppError::Validation("Discount cannot be negative".into()));
     }
+    if input.discount > input.subtotal {
+        return Err(AppError::Validation(
+            "Discount cannot exceed subtotal".into(),
+        ));
+    }
     if input.subtotal < 0 || input.total < 0 {
         return Err(AppError::Validation("Purchase amounts cannot be negative".into()));
     }

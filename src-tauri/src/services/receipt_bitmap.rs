@@ -27,6 +27,24 @@ const MAX_ROWS_PER_BAND: usize = 800;
 const ESC: u8 = 0x1B;
 const GS: u8 = 0x1D;
 
+/// 14×14 monochrome WhatsApp icon — phone handset inside a speech bubble.
+const WHATSAPP_ICON: [[u8; 14]; 14] = [
+    [0,0,0,0,1,1,1,1,1,1,0,0,0,0],
+    [0,0,0,1,1,1,1,1,1,1,1,0,0,0],
+    [0,0,1,1,0,0,0,0,0,0,1,1,0,0],
+    [0,1,1,0,0,1,1,0,1,1,0,1,1,0],
+    [0,1,0,0,1,1,1,1,1,0,0,0,1,0],
+    [1,1,0,1,1,0,0,0,1,1,0,0,1,1],
+    [1,1,0,1,0,0,0,0,0,1,0,0,1,1],
+    [1,1,0,1,0,0,0,0,0,1,0,0,1,1],
+    [1,1,0,1,1,0,0,0,1,1,0,0,1,1],
+    [0,1,0,0,1,1,1,1,1,0,0,1,1,0],
+    [0,1,1,0,0,1,1,0,1,1,0,1,1,0],
+    [0,0,1,1,0,0,0,0,0,0,1,1,0,0],
+    [0,0,0,1,1,1,1,1,1,1,1,0,0,0],
+    [0,0,0,0,1,1,1,1,1,1,0,0,0,0],
+];
+
 struct ReceiptFonts {
     karla_regular: FontVec,
     karla_bold: FontVec,
@@ -207,6 +225,54 @@ fn draw_centered(canvas: &mut Canvas, style: &TextStyle, text: &str) {
     }
 }
 
+/// Draw a monochrome bitmap icon at (x, y) on the canvas.
+fn draw_bitmap_icon(canvas: &mut Canvas, icon: &[[u8; 14]], x: i32, y: i32) {
+    for (dy, row) in icon.iter().enumerate() {
+        for (dx, &bit) in row.iter().enumerate() {
+            if bit == 1 {
+                canvas.set_px(x + dx as i32, y + dy as i32);
+            }
+        }
+    }
+}
+
+/// Draw centered text where each phone number is prefixed by a WhatsApp icon.
+/// `phone_str` is split by `|` into individual numbers.
+fn draw_centered_with_icons(
+    canvas: &mut Canvas,
+    style: &TextStyle,
+    phone_str: &str,
+    icon: &[[u8; 14]],
+) {
+    let nums: Vec<&str> = phone_str.split('|').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if nums.is_empty() {
+        return;
+    }
+    let gap = measure(style.font, style.size, "  ") ; // spacing between icon+number pairs
+    let icon_w = icon[0].len() as f32;
+    let icon_h = icon.len() as f32;
+    // Measure total width: for each number, icon_w + gap after it (except last)
+    let total_w: f32 = nums.iter().map(|n| {
+        icon_w + measure(style.font, style.size, n) + gap
+    }).sum::<f32>() - gap;
+
+    let start_x = ((PRINT_WIDTH_PX as f32 - total_w) / 2.0).max(MARGIN_X as f32);
+    let top = canvas.rows.len();
+    canvas.push_blank(style.line_advance().ceil() as usize);
+    let base_y = top as f32 + style.ascent();
+
+    // Vertically center icon relative to text baseline
+    let icon_y = (base_y - icon_h / 2.0 - style.ascent() * 0.15) as i32;
+
+    let mut pen_x = start_x;
+    for (i, num) in nums.iter().enumerate() {
+        draw_bitmap_icon(canvas, icon, pen_x as i32, icon_y);
+        pen_x += icon_w + 4.0; // small gap between icon and number
+        draw_string(canvas, style.font, style.size, pen_x, base_y, num);
+        pen_x += measure(style.font, style.size, num) + gap;
+    }
+}
+
 fn draw_left(canvas: &mut Canvas, style: &TextStyle, text: &str, indent_x: f32) {
     let max_w = PRINT_WIDTH_PX as f32 - indent_x - MARGIN_X as f32;
     for line in wrap(style.font, style.size, text, max_w) {
@@ -301,7 +367,7 @@ pub fn render_receipt(
         let line = format!("{}: {}", branch.label, branch.address);
         draw_centered(&mut c, &small, line.trim());
     }
-    draw_centered(&mut c, &small, business.phone.trim());
+    draw_centered_with_icons(&mut c, &small, business.phone.trim(), &WHATSAPP_ICON);
 
     c.push_blank(14);
     c.dashed_rule();
@@ -383,7 +449,8 @@ pub fn render_receipt(
     c.push_blank(20);
     draw_centered(&mut c, &TextStyle { font: &fonts.karla_regular, size: 28.0, leading: 12.0 }, "Thank you!");
     draw_centered(&mut c, &small, "Developed by AZ Solutions");
-    draw_centered(&mut c, &TextStyle { font: &fonts.karla_regular, size: 22.0, leading: 10.0 }, "03311203090");
+    let footer_phone = TextStyle { font: &fonts.karla_regular, size: 22.0, leading: 10.0 };
+    draw_centered_with_icons(&mut c, &footer_phone, "03311203090", &WHATSAPP_ICON);
 
     // Symmetric bottom margin (mirrors MARGIN_Y_ROWS at the top).
     c.push_blank(MARGIN_Y_ROWS);
@@ -481,6 +548,7 @@ mod tests {
             delivery_date: None,
             created_at: "2026-08-23T14:35:00+00:00".into(),
             updated_at: "2026-08-23T14:35:00+00:00".into(),
+            carried_to_invoice_id: None,
         };
         let items = vec![InvoiceItem {
             id: "i".into(),

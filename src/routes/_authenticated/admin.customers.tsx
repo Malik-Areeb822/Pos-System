@@ -15,7 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { currency } from "@/features/inventory/api";
-import { useCustomers, useCreateCustomer, type Customer } from "@/features/customers/api";
+import { useCustomers, useCreateCustomer, useReconcileBalances, type Customer } from "@/features/customers/api";
 import { useInvoices } from "@/features/invoices/api";
 import { formatDate } from "@/features/invoices/api";
 
@@ -31,6 +31,7 @@ function CustomersPage() {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "", address: "" });
+  const reconcile = useReconcileBalances();
 
   const create = useMutation({
     mutationFn: async () => {
@@ -55,7 +56,19 @@ function CustomersPage() {
     <AdminShell
       title="Customers"
       actions={
-        <Dialog open={open} onOpenChange={setOpen}>
+        <>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={reconcile.isPending}
+            onClick={() => reconcile.mutate(undefined, {
+              onSuccess: (n) => toast.success(`${n} customer balances reconciled`),
+              onError: (err: Error) => toast.error(err.message),
+            })}
+          >
+            Reconcile
+          </Button>
+          <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button size="sm" variant="brass">
               Add customer
@@ -87,6 +100,7 @@ function CustomersPage() {
             </div>
           </DialogContent>
         </Dialog>
+        </>
       }
     >
       <div className="overflow-x-auto rounded-lg border border-border bg-card">

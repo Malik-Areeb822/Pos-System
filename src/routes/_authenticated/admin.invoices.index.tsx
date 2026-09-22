@@ -1,13 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Printer, CheckCircle2, Search, X } from "lucide-react";
+import { Printer, CheckCircle2, Search, X, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminShell } from "@/components/admin/AdminShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useInvoiceRealtime } from "@/lib/tauri-events";
+
 import { currency } from "@/features/inventory/api";
 import {
   useInvoices,
@@ -24,8 +24,6 @@ export const Route = createFileRoute("/_authenticated/admin/invoices/")({
 
 function InvoicesPage() {
   const queryClient = useQueryClient();
-  useInvoiceRealtime();
-
   const [searchInput, setSearchInput] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
@@ -147,6 +145,7 @@ function InvoicesPage() {
               )}
               {invoices.map((inv: Invoice) => {
                 const balance = Math.max(0, Number(inv.total) - Number(inv.amount_paid));
+                const carried = !!inv.carried_to_invoice_id;
                 return (
                   <tr key={inv.id} className="border-b border-border last:border-0">
                     <td className="px-4 py-3">
@@ -166,14 +165,25 @@ function InvoicesPage() {
                       {inv.payment_method}
                     </td>
                     <td className="px-4 py-3 text-right">{currency(inv.total)}</td>
-                    <td
-                      className={`px-4 py-3 text-right ${balance > 0 ? "text-destructive" : "text-muted-foreground"}`}
-                    >
-                      {currency(balance)}
+                    <td className="px-4 py-3 text-right">
+                      {carried ? (
+                        <Link
+                          to="/admin/invoices/$invoiceId"
+                          params={{ invoiceId: inv.carried_to_invoice_id! }}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 hover:underline"
+                        >
+                          Carried
+                          <ArrowRight className="size-3" />
+                        </Link>
+                      ) : (
+                        <span className={balance > 0 ? "text-destructive" : "text-muted-foreground"}>
+                          {currency(balance)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        {balance > 0 && (
+                        {!carried && balance > 0 && (
                           <Button
                             size="sm"
                             variant="brass"

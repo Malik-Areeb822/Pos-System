@@ -41,10 +41,7 @@ function DashboardPage() {
   );
   const lowStock = products.filter((p) => p.stock_qty <= p.low_stock_threshold);
   const stockValue = products.reduce((acc, p) => acc + Number(p.price) * Math.max(0, Number(p.stock_qty)), 0);
-  const outstanding = invoices.reduce(
-    (acc, i) => acc + Math.max(0, Number(i.total) - Number(i.amount_paid)),
-    0,
-  );
+  const outstanding = dashboard?.outstanding_balance ?? 0;
 
   const bestSellers = products
     .filter((p) => p.stock_qty > 0)

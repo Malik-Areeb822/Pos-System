@@ -9,7 +9,7 @@ import { AdminOnly } from "@/components/admin/AdminOnly";
 import { Button } from "@/components/ui/button";
 import { currency } from "@/features/inventory/api";
 import { useInvoices } from "@/features/invoices/api";
-import { useInvoiceRealtime } from "@/lib/tauri-events";
+
 import { formatDate } from "@/features/invoices/api";
 import { saveWorkbook, fileStamp } from "@/lib/file-save";
 
@@ -54,7 +54,7 @@ function rangeStart(kind: "day" | "week" | "month" | "6month" | "year") {
   }
 }
 
-function within(invoices: { created_at: string; total: number; amount_paid: number }[], from: Date) {
+function within<T extends { created_at: string }>(invoices: T[], from: Date) {
   const t = from.getTime();
   return invoices.filter((i) => new Date(i.created_at).getTime() >= t);
 }
@@ -62,7 +62,10 @@ function within(invoices: { created_at: string; total: number; amount_paid: numb
 const sum = (rows: { total: number; amount_paid: number }[], key: "total" | "amount_paid") =>
   rows.reduce((acc, i) => acc + Number(i[key]), 0);
 
-async function exportRows(rows: { invoice_no: string; created_at: string; customer_name: string; payment_method: string; subtotal: number; discount: number; total: number; amount_paid: number; delivery_date: string | null }[], label: string) {
+const effectiveBalance = (i: { total: number; amount_paid: number; carried_to_invoice_id?: string | null }) =>
+  i.carried_to_invoice_id ? 0 : Math.max(0, Number(i.total) - Number(i.amount_paid));
+
+async function exportRows(rows: { invoice_no: string; created_at: string; customer_name: string; payment_method: string; subtotal: number; discount: number; total: number; amount_paid: number; delivery_date: string | null; carried_to_invoice_id?: string | null }[], label: string) {
   const data = rows
     .slice()
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
@@ -75,7 +78,7 @@ async function exportRows(rows: { invoice_no: string; created_at: string; custom
       Discount: Number(i.discount),
       Total: Number(i.total),
       "Amount Paid": Number(i.amount_paid),
-      Balance: Math.max(0, Number(i.total) - Number(i.amount_paid)),
+      Balance: effectiveBalance(i),
       "Delivery Date": i.delivery_date ?? "",
     }));
 
@@ -88,7 +91,7 @@ async function exportRows(rows: { invoice_no: string; created_at: string; custom
     Discount: 0,
     Total: sum(rows, "total"),
     "Amount Paid": sum(rows, "amount_paid"),
-    Balance: sum(rows, "total") - sum(rows, "amount_paid"),
+    Balance: rows.reduce((acc, i) => acc + effectiveBalance(i), 0),
     "Delivery Date": "",
   } as never);
 
@@ -111,7 +114,6 @@ async function exportRows(rows: { invoice_no: string; created_at: string; custom
 }
 
 function ReportsPage() {
-  useInvoiceRealtime();
   const { data: invoices = [] } = useInvoices();
 
   const periods = [
@@ -204,7 +206,7 @@ function ReportsPage() {
                   <td className="px-2 py-3">{currency(m.total)}</td>
                   <td className="px-2 py-3 text-muted-foreground">{currency(m.paid)}</td>
                   <td className="px-2 py-3 text-muted-foreground">
-                    {currency(Math.max(0, m.total - m.paid))}
+                    {currency(m.rows.reduce((acc, i) => acc + effectiveBalance(i), 0))}
                   </td>
                   <td className="px-2 py-3">
                     <div className="h-2 w-full rounded-full bg-muted">

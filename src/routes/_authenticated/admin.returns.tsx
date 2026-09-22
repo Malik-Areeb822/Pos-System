@@ -101,7 +101,7 @@ function ReturnsPage() {
       }
     },
     onSuccess: () => {
-      toast.success("Return recorded — stock restored and sale adjusted");
+      toast.success("Return recorded — stock, sale & profit adjusted");
       setQty({});
       setReason("");
       queryClient.invalidateQueries();

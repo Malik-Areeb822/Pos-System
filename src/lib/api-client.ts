@@ -141,6 +141,7 @@ export interface CustomersApi {
   create(input: CreateCustomerInput): Promise<Customer>;
   update(id: string, input: Partial<CreateCustomerInput>): Promise<Customer>;
   delete(id: string): Promise<void>;
+  reconcile(): Promise<number>;
 }
 
 export interface MarkPaidInput {
@@ -280,6 +281,7 @@ export interface Invoice {
   notes: string | null;
   delivery_date: string | null;
   created_at: string;
+  carried_to_invoice_id: string | null;
 }
 
 export interface InvoiceItem {
@@ -522,6 +524,7 @@ export const api: ApiClient = {
     update: (id, input) =>
       apiInvoke("update_customer", { input: { ...input, id } }, { feature: "customers" }),
     delete: (id) => apiInvoke("delete_customer", { id }, { feature: "customers" }),
+    reconcile: () => apiInvoke("reconcile_balances", {}, { feature: "customers" }),
   },
   invoices: {
     list: (params?: ListInvoicesParams) =>

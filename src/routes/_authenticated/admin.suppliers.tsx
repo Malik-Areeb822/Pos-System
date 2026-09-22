@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { currency } from "@/features/inventory/api";
 import { formatDate } from "@/features/invoices/api";
-import { useSuppliersRealtime } from "@/lib/tauri-events";
+
 import {
   useSuppliers,
   useSupplierPurchases,
@@ -71,8 +71,6 @@ function toSupplierDraft(s: Supplier): SupplierDraft {
 
 function SuppliersPage() {
   const queryClient = useQueryClient();
-  useSuppliersRealtime();
-
   const { data: suppliers = [], isLoading: loadingSuppliers } = useSuppliers();
   const { data: purchases = [], isLoading: loadingPurchases } = useSupplierPurchases();
 

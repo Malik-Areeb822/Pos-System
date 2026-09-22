@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices\n                   WHERE LOWER(invoice_no) LIKE '%' || LOWER(?) || '%'\n                      OR LOWER(customer_name) LIKE '%' || LOWER(?) || '%'\n                   ORDER BY created_at DESC LIMIT ?",
+  "query": "SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at, carried_to_invoice_id FROM invoices ORDER BY created_at DESC LIMIT ? OFFSET ?",
   "describe": {
     "columns": [
       {
@@ -72,10 +72,15 @@
         "name": "updated_at",
         "ordinal": 13,
         "type_info": "Text"
+      },
+      {
+        "name": "carried_to_invoice_id",
+        "ordinal": 14,
+        "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 3
+      "Right": 2
     },
     "nullable": [
       true,
@@ -91,8 +96,9 @@
       true,
       true,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "d7c8c68f41b293dcd2be78df318eae65e909bf6f36f81c161e7e5de201018929"
+  "hash": "dcc1ccc8c9cc1c8dff1f516e00d7898404bc4d7255ae14784015a4397bc26de6"
 }

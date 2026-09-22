@@ -24,8 +24,9 @@ pub async fn purge_old_sales(pool: &DbPool) -> Result<u64, AppError> {
     let cutoff = (chrono::Utc::now() - chrono::Duration::days(RETENTION_DAYS)).to_rfc3339();
 
     // Only fully-settled sales are removable — protects receivables.
+    // Also skip invoices referenced as carry-forward sources to avoid dangling links.
     let eligible: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM invoices WHERE created_at < ? AND amount_paid >= total",
+        "SELECT COUNT(*) FROM invoices WHERE created_at < ? AND amount_paid >= total AND carried_to_invoice_id IS NULL",
     )
     .bind(&cutoff)
     .fetch_one(pool)
@@ -64,7 +65,7 @@ pub async fn purge_old_sales(pool: &DbPool) -> Result<u64, AppError> {
             ))
         })?;
 
-    let result = sqlx::query("DELETE FROM invoices WHERE created_at < ? AND amount_paid >= total")
+    let result = sqlx::query("DELETE FROM invoices WHERE created_at < ? AND amount_paid >= total AND carried_to_invoice_id IS NULL")
         .bind(&cutoff)
         .execute(pool)
         .await

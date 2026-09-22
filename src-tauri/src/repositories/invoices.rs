@@ -20,6 +20,7 @@ pub struct Invoice {
     pub delivery_date: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub carried_to_invoice_id: Option<String>,
 }
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize, serde::Deserialize)]
@@ -87,7 +88,7 @@ impl InvoiceRepository {
             // (case-insensitive), newest first, capped.
             sqlx::query_as_unchecked!(
                 Invoice,
-                r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices
+                r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at, carried_to_invoice_id FROM invoices
                    WHERE LOWER(invoice_no) LIKE '%' || LOWER(?) || '%'
                       OR LOWER(customer_name) LIKE '%' || LOWER(?) || '%'
                    ORDER BY created_at DESC LIMIT ?"#,
@@ -100,7 +101,7 @@ impl InvoiceRepository {
         } else {
             sqlx::query_as_unchecked!(
                 Invoice,
-                r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices ORDER BY created_at DESC LIMIT ? OFFSET ?"#,
+                r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at, carried_to_invoice_id FROM invoices ORDER BY created_at DESC LIMIT ? OFFSET ?"#,
                 limit, offset
             )
             .fetch_all(&self.pool)
@@ -112,7 +113,7 @@ impl InvoiceRepository {
     pub async fn get(&self, id: &str) -> Result<Option<Invoice>, AppError> {
         let invoice = sqlx::query_as_unchecked!(
             Invoice,
-            r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices WHERE id = ?"#,
+            r#"SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at, carried_to_invoice_id FROM invoices WHERE id = ?"#,
             id
         )
         .fetch_optional(&self.pool)
@@ -168,8 +169,8 @@ impl InvoiceRepository {
         let due = total - amount_paid;
 
         sqlx::query!(
-            r#"INSERT INTO invoices (id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+            r#"INSERT INTO invoices (id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at, carried_to_invoice_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)"#,
             id, invoice_no, input.customer_id, input.customer_name, input.subtotal, input.discount, total, previous_balance, amount_paid, input.payment_method, input.notes, input.delivery_date, now, now
         )
         .execute(&mut *tx)
@@ -202,6 +203,24 @@ impl InvoiceRepository {
                 .await?;
         }
 
+        // When this invoice absorbs a previous balance, mark the source
+        // invoice so the UI can show "Balance carried to this invoice".
+        if previous_balance > 0 {
+            if let Some(customer_id) = &input.customer_id {
+                sqlx::query!(
+                    r#"UPDATE invoices SET carried_to_invoice_id = ?
+                       WHERE id = (
+                         SELECT id FROM invoices
+                         WHERE customer_id = ? AND id != ? AND (total - amount_paid) > 0 AND carried_to_invoice_id IS NULL
+                         ORDER BY created_at DESC LIMIT 1
+                       )"#,
+                    id, customer_id, id
+                )
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+
         tx.commit().await?;
 
         self.get(&id).await?.ok_or(AppError::NotFound("Invoice not found after creation".into()))
@@ -211,6 +230,17 @@ impl InvoiceRepository {
         let mut tx = self.pool.begin().await?;
 
         let invoice = self.get(id).await?.ok_or(AppError::NotFound("Invoice not found".into()))?;
+
+        // Block payment on an invoice whose balance was carried to a newer one.
+        if let Some(carried_to) = &invoice.carried_to_invoice_id {
+            let linked = self.get(carried_to).await?;
+            let linked_no = linked.map(|i| i.invoice_no).unwrap_or_default();
+            return Err(AppError::Validation(format!(
+                "This invoice's balance was carried to {}. Pay that invoice instead.",
+                linked_no
+            )));
+        }
+
         let old_paid = invoice.amount_paid;
         let due_before = (invoice.total - old_paid).max(0);
         if amount > due_before {

@@ -38,6 +38,13 @@ pub fn run() {
             // the DB first and only notifies the UI when rows were removed.
             tauri::async_runtime::spawn(crate::services::retention::run_maintenance(
                 app.handle().clone(),
+                pool.clone(),
+            ));
+
+            // Reconciliation: recompute all customer outstanding_balance from
+            // the actual invoice ledger so stale values get corrected.
+            tauri::async_runtime::spawn(crate::services::reconciliation::run_on_startup(
+                app.handle().clone(),
                 pool,
             ));
             
@@ -122,6 +129,9 @@ pub fn run() {
             commands::suppliers::get_supplier_purchase_with_items,
             commands::suppliers::create_supplier_purchase,
             commands::suppliers::mark_supplier_purchase_paid,
+            
+            // Reconciliation commands
+            commands::reconciliation::reconcile_balances,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

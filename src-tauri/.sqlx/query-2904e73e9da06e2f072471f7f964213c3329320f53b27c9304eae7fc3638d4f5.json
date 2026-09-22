@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at FROM invoices WHERE id = ?",
+  "query": "SELECT id, invoice_no, customer_id, customer_name, subtotal, discount, total, previous_balance, amount_paid, payment_method, notes, delivery_date, created_at, updated_at, carried_to_invoice_id FROM invoices WHERE id = ?",
   "describe": {
     "columns": [
       {
@@ -72,6 +72,11 @@
         "name": "updated_at",
         "ordinal": 13,
         "type_info": "Text"
+      },
+      {
+        "name": "carried_to_invoice_id",
+        "ordinal": 14,
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -91,8 +96,9 @@
       true,
       true,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "0f94421a447c286ad732ed0c81692ea3c98ce8f66fa7ab0228ce4eb6e79bbc29"
+  "hash": "2904e73e9da06e2f072471f7f964213c3329320f53b27c9304eae7fc3638d4f5"
 }

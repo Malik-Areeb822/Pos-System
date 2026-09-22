@@ -34,11 +34,13 @@ export type Invoice = {
   subtotal: number;
   discount: number;
   total: number;
+  previous_balance: number;
   amount_paid: number;
   payment_method: PaymentMethod;
   notes: string | null;
   delivery_date: string | null;
   created_at: string;
+  carried_to_invoice_id: string | null;
 };
 
 export type InvoiceItem = {

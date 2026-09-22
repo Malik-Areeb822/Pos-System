@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ArrowRight } from "lucide-react";
 
 import { AdminShell } from "@/components/admin/AdminShell";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { BUSINESS } from "@/lib/business";
-import { useInvoiceRealtime } from "@/lib/tauri-events";
+
 import { currency } from "@/features/inventory/api";
 import { useInvoice, useMarkInvoicePaid, usePrintInvoicePdf, usePrintReceipt, type Invoice, type InvoiceItem } from "@/features/invoices/api";
 import { formatDate } from "@/features/invoices/api";
@@ -21,8 +22,6 @@ export const Route = createFileRoute("/_authenticated/admin/invoices/$invoiceId"
 function InvoiceDetailPage() {
   const { invoiceId } = Route.useParams();
   const queryClient = useQueryClient();
-  useInvoiceRealtime(invoiceId);
-
   const { data, isLoading } = useInvoice(invoiceId);
 
   const invoice = data?.invoice;
@@ -208,7 +207,25 @@ function InvoiceDetailPage() {
             </div>
           </div>
 
-          {balance > 0 && (
+          {invoice.carried_to_invoice_id && (
+            <div className="mt-6 flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 print:hidden">
+              <span>This invoice's balance was carried to</span>
+              <Link
+                to="/admin/invoices/$invoiceId"
+                params={{ invoiceId: invoice.carried_to_invoice_id }}
+                className="font-semibold underline underline-offset-2 hover:text-emerald-600"
+              >
+                {(() => {
+                  /* Resolve invoice number from query cache or fallback to ID */
+                  const carried = queryClient.getQueryData<{ invoice: Invoice }>(["invoice", invoice.carried_to_invoice_id]);
+                  return carried?.invoice.invoice_no ?? invoice.carried_to_invoice_id.slice(0, 8);
+                })()}
+              </Link>
+              <ArrowRight className="size-4" />
+            </div>
+          )}
+
+          {balance > 0 && !invoice.carried_to_invoice_id && (
             <div className="mt-6 flex flex-wrap items-end gap-3 border-t border-border pt-4 print:hidden">
               <div className="space-y-1">
                 <Label htmlFor="record-payment">Record payment — due {currency(balance)}</Label>

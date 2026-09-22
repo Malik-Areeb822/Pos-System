@@ -17,6 +17,7 @@ export type Invoice = {
   notes: string | null;
   delivery_date: string | null;
   created_at: string;
+  carried_to_invoice_id: string | null;
 };
 
 export type InvoiceItem = {

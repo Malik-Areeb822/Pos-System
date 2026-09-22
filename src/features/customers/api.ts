@@ -63,3 +63,14 @@ export function useDeleteCustomer() {
     },
   });
 }
+
+export function useReconcileBalances() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.customers.reconcile(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}

@@ -9,6 +9,7 @@ pub mod cashiers;
 pub mod print;
 pub mod backup;
 pub mod suppliers;
+pub mod reconciliation;
 
 pub use auth::*;
 pub use products::*;

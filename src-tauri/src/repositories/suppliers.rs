@@ -260,9 +260,10 @@ impl SupplierPurchaseRepository {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
 
-        let default_paid = if input.payment_method == "credit" { 0 } else { input.total };
-        let amount_paid = input.amount_paid.unwrap_or(default_paid).clamp(0, input.total);
-        let due = input.total - amount_paid;
+        let total = input.subtotal.saturating_sub(input.discount);
+        let default_paid = if input.payment_method == "credit" { 0 } else { total };
+        let amount_paid = input.amount_paid.unwrap_or(default_paid).clamp(0, total);
+        let due = total - amount_paid;
 
         sqlx::query(
             r#"INSERT INTO supplier_purchases (id, purchase_no, supplier_id, supplier_name, subtotal, discount, total, amount_paid, payment_method, notes, created_at, updated_at)
@@ -274,7 +275,7 @@ impl SupplierPurchaseRepository {
         .bind(&input.supplier_name)
         .bind(input.subtotal)
         .bind(input.discount)
-        .bind(input.total)
+        .bind(total)
         .bind(amount_paid)
         .bind(&input.payment_method)
         .bind(&input.notes)
