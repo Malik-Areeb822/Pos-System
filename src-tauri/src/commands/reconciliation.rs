@@ -8,6 +8,8 @@ pub async fn reconcile_balances(app: AppHandle, db: State<'_, crate::database::D
     require_cashier_or_admin(&app, auth_header).await?;
     let pool = db.pool().await;
     let n = crate::services::reconciliation::reconcile_balances(&pool).await?;
+    let s = crate::services::reconciliation::reconcile_suppliers(&pool).await?;
     crate::events::emit_customers_changed(&app).await;
-    Ok(n)
+    crate::events::emit_suppliers_changed(&app).await;
+    Ok(n + s)
 }

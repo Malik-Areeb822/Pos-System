@@ -5,9 +5,213 @@
 
 > **Goal**: Convert to single executable, auto-start, fully offline, loosely coupled
 > **Constraint**: Zero functional changes to core POS behavior
-> **Status**: 🟢 FREEZE RESOLVED + INSTALLERS REBUILT & RE-SIGNED (2026-08-25 late night) — React 18.3.1 pin passed full gauntlet incl. owner's manual login + sample sale; E/A/D mitigations reverted; fresh MSI + NSIS built via `cargo tauri build`, ship-gate passed on their own exe (serving/storm/typing/CPU), both signed `CN=AUZ Tech` + RFC3161 timestamp (valid to 2036). Remaining: clean-machine install test → full manual matrix → staff docs.
-> **Date**: 2026-08-25
+> **Status**: 🟢 PRE-DEPLOY FIX PLAN IMPLEMENTED — Phases 1–4 ✅ (2026-10-06, plan `PRE_DEPLOY_FIX_PLAN.md`). Gates 1–6 clean; gate 7 WAL smoke clean; 4 manual UI smoke checks + one restore end-to-end still to run by hand. Prior: 🟡 carry-forward system complete (2026-10-03), system lock + AZ Solutions signing (2026-09-22). `cargo test --lib` is **47 passed / 0 failed / 1 ignored**.
+> **Date**: 2026-10-06
 > **Phase**: Phase C release
+
+---
+
+## 🔥 Session 2026-10-06: Pre-Deployment Fix Plan — Phases 2 frontend, 3, 4 + gates
+
+**Status**: 🟢 **COMPLETE (code).** Plan: `PRE_DEPLOY_FIX_PLAN.md`. Phase 2 frontend (2.2/2.3/2.6/2.7) ✅, Phase 3 ✅, Phase 4 ✅, gates 1–6 ✅, gate 7a (WAL) ✅.
+
+### Done
+
+**Phase 2 frontend ✅ (2.2 / 2.3 / 2.6 / 2.7)**
+| Item | Files |
+|------|-------|
+| `ListInvoicesParams.limit?: number`; new `useInvoicesInRange(fromIso)` (`RANGE_LIMIT = 50_000`, key `["invoices","range",fromIso]`) + `useCustomerInvoices(customerId, enabled)` (`CUSTOMER_LIMIT = 200`, key `["invoices","customer",id]`); `useInvoices()` untouched | `api-client.ts:157-162,549`, `features/invoices/api.ts` |
+| Reports: merged imports, `useMemo([])`-stable `fromIso` = min(Jan 1, 11-months-back) local midnights as `+00:00` (DB stores `to_rfc3339()`), **NET SALES** row pushed after `TOTAL` in `exportRows` (`total − previous_balance`, everything else `0`/`""`, `as never`); dropped unused `useQuery` | `admin.reports.tsx` |
+| Dashboard: Sales today → `total_sales_today`/`total_invoices_today`, Last 7 days → `sales_7d` (sub "rolling week"); `sumBetween` + `today` deleted; `useInvoices()` kept only for Recent invoices | `admin.index.tsx` |
+| Customers: Orders column → `invoice_count ?? 0`; page-level `useCustomerInvoices(expanded, expanded !== null)`; `<>` → `<Fragment key={c.id}>`; loading + "Showing the most recent 200 invoices." note; `invoice_count?: number` on the TS `Customer` types | `admin.customers.tsx`, `features/customers/api.ts`, `features/pos/api.ts` |
+
+**Phase 3 ✅**
+| Item | Files |
+|------|-------|
+| Checkout wraps `createCustomer.mutateAsync` — non-`Conflict:` rethrows; on `Conflict:` refetch `queryClient.fetchQuery({queryKey:["pos-customers"], …})`, match lowercased name + trimmed phone → reuse + `toast.info`; no match → `customer = null` + `toast.warning`, sale proceeds | `admin.pos.tsx` |
+| `["pos-customers"]` invalidated on `useCreateCustomer`/`useUpdateCustomer`/`useDeleteCustomer` **and** on checkout success (3 spots, 2 beyond plan — intentional) | `features/customers/api.ts`, `admin.pos.tsx` |
+| `customers:changed` realtime now also invalidates `["pos-customers"]` (the listener is `GlobalRealtimeListener` in `route.tsx`, **not** `tauri-events.ts`) | `route.tsx` |
+
+**Phase 4 ✅**
+| Item | Files |
+|------|-------|
+| `open_pool` builds `SqliteConnectOptions` (`.busy_timeout(5000)`, `.foreign_keys(true)`, `.synchronous(Normal)`; **no** `.journal_mode()` — the WAL switch takes an exclusive lock that `busy_timeout` can't wait on) and issues `PRAGMA journal_mode=WAL` once on a lone `SqliteConnection`, non-fatal (`log::warn!` + fall back to rollback journal), then `SqlitePoolOptions::connect_with(opts)` | `database/connection.rs:51-98` |
+| `remove_stale_wal_files(db_path)` called at all 3 points of `import_database` — after `old.close()` before `fs::copy`, in the copy-failure branch before the `open_pool` revive, and after the copy before `match open_pool` | `commands/backup.rs:35,143,148,157` |
+| 4 tests: WAL + per-connection pragmas (`journal_mode=wal`, `foreign_keys=1`, `synchronous=1`, `busy_timeout=5000`), WAL survives close/reopen, stale side-files deleted (db survives), no-op when nothing exists | `connection.rs`, `backup.rs` |
+| Also removed the pre-existing unused `tauri::Manager` import | `database/connection.rs` |
+
+### Gates (2026-10-06)
+| Gate | Result |
+|------|--------|
+| `cargo check --all-targets` | ✅ 0 errors |
+| `cargo test --lib` | ✅ **47 passed / 0 failed / 1 ignored** (baseline was 43+1) |
+| `cargo clippy --all-targets` | ✅ 39 warnings vs 40 baseline — no new (one removed, one relocated by the added code) |
+| `cargo build` | ✅ links |
+| `tsc --noEmit` / `npm run lint` / `npm run build` | ⚠️ 14 (baseline, **accepted**) / ✅ **0 errors, 6 warnings** (exit 0) / ✓ |
+| Gate 6 — live-DB-copy migration merge | ✅ **20/20**: keeper = earliest `created_at` / lowest `rowid`, balance = SUM, invoices repointed, index created + rejects, re-run no-op, real rows preserved |
+| Gate 7a — WAL smoke on the live DB | ✅ launched the debug binary: `journal_mode` `delete` → `wal`, `-wal`/`-shm` present while running, persists after exit, `integrity_check = ok`, data intact (2 customers / 19 invoices), relaunch works |
+
+### Repo-wide lint (2026-10-06)
+`npm run lint` is now **green: 0 errors / 6 warnings (exit 0)**. Two config fixes were needed first:
+- `eslint.config.js` global ignores only covered `dist`/`.output`/`.vinxi`, so `eslint .` traversed `src-tauri/target` + `dist-spa` and blew past a 900 s timeout. Added `dist-spa`, `src-tauri/target`, `src-tauri/gen`, `.opencode`, `**/*.d.ts`.
+- `.prettierrc` had no `endOfLine`, so prettier's `lf` default flagged **1027 of 1129** findings as CRLF artifacts under `core.autocrlf=true`. Added `"endOfLine": "auto"`, then `eslint --fix` cleared the remaining 105 genuine prettier issues across 24 files (verified `tsc` still 14 and `vite build` still ✓).
+- The 6 warnings are stock shadcn `react-refresh/only-export-components` in `ui/*.tsx`.
+
+### Still to run by hand
+- **Gate 7b — UI smoke:** the owner ran the app against vite (PID 10008) and exercised it — live-DB invoice count went **19 → 21** during the session — but the 5-point checklist (dashboard "Sales today" == Reports "Today", rolling 7-day card, POS duplicate reuse, Orders vs history, Excel **NET SALES** row) was never formally signed off. **Re-run it against the installed build (step 11).**
+- **Gate 7c — restore end-to-end:** not run. `remove_stale_wal_files` call sites are unit-tested only.
+
+### Corrections vs the plan
+- Current SQLite numbers `synchronous` as `0=OFF, 1=NORMAL, 2=FULL, 3=EXTRA` — the new test originally asserted `2`.
+- `db_url.parse()` needed a turbofish (`parse::<SqliteConnectOptions>()`); the `let opts: SqliteConnectOptions` annotation alone did not resolve the type parameter.
+- Migrations **017 + 018 were already applied to the live DB** (the old note at the bottom of this file was stale), so gate 6 had to drop `ux_customers_name_phone` to reach the pre-018 state.
+- Phase 4 queries are runtime `sqlx::query` only → zero `.sqlx` offline-cache churn.
+
+---
+
+## 📁 Session 2026-10-05: Pre-Deployment Fix Plan — Phase 1 done, Phase 2 backend done
+
+**Status**: ✅ **HANDED OFF** — completed by the 2026-10-06 session. Plan: `PRE_DEPLOY_FIX_PLAN.md` (repo root, untracked).
+Phase 1 ✅ complete (gates clean, owner-run). Phase 2 backend ✅ complete.
+Remaining items from this session were delivered on 2026-10-06 (see above).
+
+### Done
+
+**Phase 1 — duplicate-customer protection ✅**
+| Item | Files |
+|------|-------|
+| Migration `018_customer_unique.sql` — merge dupes keyed `lower(trim(name))` + `trim(COALESCE(phone,''))`, keeper = earliest `created_at`, invoices repointed, keeper balance = SUM, dupes deleted, `ux_customers_name_phone` unique index | `src-tauri/src/database/migrations/018_customer_unique.sql` |
+| `find_duplicate()` guard in `create` **and** `update` → `AppError::Conflict`, plus `is_unique_violation()` catch as race backstop | `repositories/customers.rs:71,116,147` |
+| 4 tests: distinct-create matrix, duplicate-create Conflict (case/whitespace/None-vs-blank phone), update-to-duplicate Conflict, migration-018 merge (keeper, balance sum, invoice repoint, index enforcement) | `customers.rs:183+` |
+| **Gates run clean (owner-reported)** — Phase-1 test suite passes | — |
+
+**Phase 2 backend ✅ (2.1 / 2.4 / 2.5 / 2.7-backend)**
+| Item | Files |
+|------|-------|
+| `ListInvoicesInput` `from_date`/`to_date`/`customer_id` + repo 4-branch list (customer / range / search / default), `RANGE_CAP = 50_000`; default path byte-identical (limit 50, `SEARCH_CAP` 200). *Deviation:* `customer_id` branch capped at `SEARCH_CAP` — harmless, keep | `commands/invoices.rs:15-17,61-63`, `repositories/invoices.rs:79-173` |
+| `get_dashboard` sargable **local-time** ranges (`chrono::Local` midnight → RFC3339, `created_at >= ? AND < ?`) for sales, counts **and** all 3 profit windows — fixes UTC 00:00–05:00 PKT skew; new `sales_7d`, `invoices_7d` fields | `commands/reports.rs:56-104,161-171` |
+| TS `DashboardStats` + `sales_7d`/`invoices_7d`; `ListInvoicesParams` with all 3 filters; `Customer.invoice_count?` | `api-client.ts:152-157,263,355-356` |
+| `invoice_count` LEFT JOIN aggregate in customer `list`/`get` (`#[serde(default)]`) | `repositories/customers.rs:18,43,59` |
+
+### Left (in plan order) — all delivered 2026-10-06
+
+> Kept for traceability only; see the 2026-10-06 session above for what actually shipped.
+
+| Phase | Item |
+|-------|------|
+| **2.2** | ✅ `useInvoicesInRange(fromIso)` + `useCustomerInvoices(customerId, enabled)` → `features/invoices/api.ts` |
+| **2.3** | ✅ `admin.reports.tsx` — `useInvoicesInRange(from)` + **NET SALES** row in `exportRows` below untouched `TOTAL` |
+| **2.6** | ✅ `admin.index.tsx` — `sumBetween` deleted; Sales today / Last 7 days from `dashboard`; `useInvoices()` only for Recent invoices |
+| **2.7** | ✅ `admin.customers.tsx` — Orders → `c.invoice_count`, page `useInvoices()` dropped, lazy history + "most recent 200" note, Fragment keyed; `invoice_count?: number` on both TS `Customer` types |
+| **3** | ✅ POS `createCustomer` try/catch → re-lookup & reuse / anonymous walk-in + warning; `["pos-customers"]` invalidated on create + realtime event |
+| **4** | ✅ `connection.rs` — one-time `PRAGMA journal_mode=WAL` + `busy_timeout=5000`, `synchronous=NORMAL`, `foreign_keys=ON`; `backup.rs::import_database` — `moonpipe.db-wal`/`-shm` removed at all 3 points |
+| **Gates** | ✅ 1–6 clean, 7a clean; **7b (UI smoke) and 7c (restore end-to-end) still to run by hand** |
+| **Note** | Migrations 017 + 018 **are** applied to the live DB (confirmed `versions=[1..18]`, `ux_customers_name_phone` present) — this note was stale |
+
+---
+
+## 🔥 Session 2026-10-03: Carry-Forward System — Hardening, Supplier Port, Reconcile Cleanup
+
+**Status**: ✅ **COMPLETE.** Three workstreams delivered: (A) invoice carry-forward hardening — ledger-truth reconciliation, return cascade, net-revenue reports; (B) supplier purchase carry-forward — full port of the invoice chain (migration 017); (C) Customers-page Reconcile button removed (UI-only).
+
+### A. Invoice carry-forward hardening — balance truth
+
+| Area | Files | What changed |
+|------|-------|--------------|
+| **Reconciliation service** | `services/reconciliation.rs` | Recomputes `customers.outstanding_balance` as `SUM(total - amount_paid)` over **non-carried** open invoices (`carried_to_invoice_id IS NULL`) — a SUM, not "newest", because legacy data can hold several open invoices per customer. Runs at **startup** (`lib.rs` → `run_and_notify`), after **backup restore** (`commands/backup.rs`), and via manual command. Logs `broken_invariant_rows` when a recompute still disagrees |
+| **Manual command** | `commands/reconciliation.rs` | `reconcile_balances` (cashier/admin) — returns row count, emits `customers:changed` |
+| **Absorbed-source marking** | `repositories/invoices.rs` | `create()` marks **every** open invoice it absorbed (not just the newest) so legacy multi-open customers don't strand debt |
+| **Return cascade** | `repositories/invoices.rs`, `repositories/returns.rs` | A return that shrinks invoice A pushes the reduction forward through `carried_to_invoice_id` (depth-capped walk): successors' `previous_balance`/`total`/`amount_paid` re-derived each hop; customer balance recomputed from **leaf** invoices — never nudged by `+=` (a carried invoice is not a leaf; deltas would double-count or vanish at next reconcile) |
+| **Dead API removed** | `repositories/customers.rs` | `update_balance(id, delta)` deleted — mirror is derived, hand-nudging is banned |
+| **Net-revenue reports** | `commands/reports.rs`, `admin.index.tsx`, `admin.reports.tsx` | Every sales/revenue aggregate now sums `total - previous_balance` (money already counted when it first changed hands); Excel export gains a **Previous Balance** column |
+
+### B. Supplier purchase chain — full port (mirrors the invoice chain)
+
+| Phase | Files | Summary |
+|-------|-------|---------|
+| **Migration** | `017_supplier_purchase_carry_forward.sql` | `previous_balance INTEGER NOT NULL DEFAULT 0`, `carried_to_purchase_id TEXT REFERENCES supplier_purchases(id)`, index `idx_supplier_purchases_carried_to`. Migrations 001–016 untouched |
+| **Create** | `repositories/suppliers.rs` `create()` | Reads supplier balance → `previous_balance`; `total = subtotal - discount + previous_balance`; `amount_paid` clamped to grand total; supplier balance **SET** to `MAX(0, due)` (replaced `+=`); marks **every** absorbed open purchase when `previous_balance > 0`; new purchase inserted with `carried_to_purchase_id = NULL` (chain head) |
+| **Guard** | `suppliers.rs` `mark_paid()` | Absorbed purchases (`carried_to_purchase_id` set) cannot be paid — validation error names the successor `purchase_no` |
+| **Reconciliation** | `services/reconciliation.rs`, `commands/reconciliation.rs` | `SUPPLIER_RECONCILE_TEMPLATE` mirror (SUM over `carried_to_purchase_id IS NULL`); wired into the same startup / restore / manual-command / invariant-warning paths. `run_and_notify` runs both reconciles and emits both events |
+| **Frontend** | `api-client.ts`, `admin.suppliers.tsx` | `SupplierPurchase.previous_balance` + `carried_to_purchase_id`; dialog shows carried row + grand total; cash/bank methods **auto-fill Amount Paid to grand total** (user-editable flag, resets on supplier/method change); Purchase History gains **Previous Balance** column + **Carried** badge; Record Payment hidden on absorbed POs; directory rows show `· carried` |
+| **Tests** | `suppliers.rs`, `reconciliation.rs`, `test_support.rs` | 11 new tests (7 repo + 4 supplier-reconcile) + fixtures → **cargo test 39/39**. Suppliers repo stays runtime-query-only → **zero `.sqlx` churn** |
+| **Plan** | `.opencode/plans/SUPPLIER_CARRY_FORWARD_PLAN.md` | Approved 7-step plan, done criteria, STOP conditions, maintenance notes |
+
+**Naming rule**: supplier column is `carried_to_purchase_id` (never `carried_to_invoice_id`) — deliberate divergence from invoices; keep it if more ledgers get chains.
+
+### C. Customers-page Reconcile button removed (UI-only)
+
+Deleted the button, `useReconcileBalances` hook, and `api.customers.reconcile` (3 files). The Rust `reconcile_balances` command is **kept** — reconciliation already runs at startup and after every restore, so the button was redundant repair UI. Service, command, and auto-run paths untouched.
+
+### Verification (all green)
+
+| Gate | Result |
+|------|--------|
+| `cargo test` | **39 passed, 0 failed** |
+| `cargo check` + `SQLX_OFFLINE=true cargo check` | exit 0 both |
+| `bunx vite build` | ✓ (revert `routeTree.gen.ts` noise after every build) |
+| `bunx tsc --noEmit` | exactly 14 baseline errors, 0 new |
+| eslint (touched files vs `git show HEAD:` baselines) | no new errors; customers page 38 → **33** |
+| Live DB | migration **017 not yet applied** — applies automatically on next launch; 001–016 untouched; hash delta was concurrent app usage (invoice INV-2026-0011), schema verified intact |
+
+### Known open (flagged, NOT fixed)
+
+- `commands/reports.rs::get_sales_report` sums `i.total - i.previous_balance` over a `LEFT JOIN invoice_items` with `GROUP BY date` → multi-item days count each invoice once per item. Profit math (per-item CASE) is unaffected.
+
+---
+
+## 🔥 Session 2026-09-22: System Lock Feature + Code Signing + Build
+
+**Status**: ✅ **COMPLETE.** Three features delivered: (1) system lock via secret key combo, (2) self-signed cert as "AZ Solutions", (3) fresh signed installers built and tested.
+
+### What was built
+
+| Phase | Files | Summary |
+|-------|-------|---------|
+| **DB migration** | `016_add_app_settings.sql` | `app_settings` table (key TEXT PK, value TEXT, updated_at TEXT) with unique index |
+| **HMAC + bcrypt** | `src-tauri/src/license/mod.rs` | `LicenseState` (in-memory RwLock), `verify_password()` (bcrypt), `sign_hmac()` / `verify_hmac()` (SHA-256), `is_system_locked()` / `set_system_locked()`, `require_unlocked()` middleware |
+| **License commands** | `src-tauri/src/commands/license.rs` | `check_system_lock` (no auth), `set_system_lock` (no auth — combo IS auth), `unlock_with_password` |
+| **Module registration** | `commands/mod.rs`, `lib.rs` | `pub mod license`, 3 commands registered in `generate_handler![]`, `LicenseState` managed, lock checked on startup |
+| **Zustand store** | `src/lib/license-store.ts` | `{ status, isLoading, setStatus, setLoading }` |
+| **License API** | `src/features/license/api.ts` | `checkSystemLock()`, `unlockWithPassword(password)` |
+| **Key combo listener** | `src/components/license/KeyComboListener.tsx` | Detects `lockdownsystem` typed within 4 seconds (no modifiers); blocks on input/textarea/contenteditable; triggers `set_system_lock` via invoke |
+| **Lock screen** | `src/components/license/LockScreen.tsx` | Full-screen overlay with password input, lock icon, AZ Solutions credit |
+| **License gate** | `src/components/license/LicenseGate.tsx` | Top-level wrapper — loading → locked → unlocked states; fail-closed on error |
+| **App entry** | `src/main.tsx` | `LicenseGate` wraps `RouterProvider` |
+| **Backup hardening** | `commands/backup.rs` | Ensures `app_settings` + lock row exist after restore; `app_settings` added to `REQUIRED_TABLES` |
+| **Code signing cert** | `signing-cert.pfx` | Self-signed `CN=AZ Solutions`, SHA-256, 5-year validity, password `MoonPipe2026` |
+| **Installer build** | `cargo tauri build` | Both MSI + NSIS built and signed with AZ Solutions cert + DigiCert timestamp |
+
+### Key combo evolution
+
+| Version | Combo | Problem | Resolution |
+|---------|-------|---------|------------|
+| v1 | Ctrl+Shift+A-R-E-E-B | Ctrl+R refreshes the page, making the combo useless | Dropped Ctrl |
+| v2 | Shift+A-R-E-E-B | Shift held during 'a' gives uppercase 'A'; complex modifier tracking | Dropped modifiers entirely |
+| v3 | Just type `lockdownsystem` | — | Final. 14-char string typed within 4s. No false positives ("lockdownsystem" is not a word). |
+
+### Bug fixed this session
+
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| `set_system_lock` silently fails from key combo | Command required `require_admin()` with JWT auth header, but `KeyComboListener` sends no auth → Rust returns auth error → swallowed by `.catch(() => {})` | Removed `require_admin` from `set_system_lock`. The secret combo IS the authentication — no JWT needed to lock. Only password needed to unlock. |
+
+### Build artifacts (2026-09-22, v1.0.0)
+
+| File | Signed | Publisher |
+|------|--------|-----------|
+| `src-tauri/target/release/bundle/msi/Moon Pipe POS_1.0.0_x64_en-US.msi` | ✓ SHA-256 + DigiCert timestamp | AZ Solutions |
+| `src-tauri/target/release/bundle/nsis/Moon Pipe POS_1.0.0_x64-setup.exe` | ✓ SHA-256 + DigiCert timestamp | AZ Solutions |
+
+Certificate: self-signed `CN=AZ Solutions`, valid to 2031, password `MoonPipe2026`, exported as `signing-cert.pfx` in project root.
+
+### Installed app behavior
+
+- Install location: `D:\Projects\pos\Moon Pipe POS\` (per NSIS default, user-selected)
+- Database: `C:\ProgramData\MoonPipe\moonpipe.db` (shared with dev instance)
+- First launch after install may show blank window momentarily — kill and relaunch resolves (WebView2 cold start)
+- Window title: "Moon Pipe POS"
+- `app_settings.system_lock` persists across launches; if locked during dev, installed app also reads locked state (same DB)
 
 ---
 
@@ -674,9 +878,9 @@ remain unused by the UI; these semantic gaps are recorded so nobody "fixes" them
 |----------|-------|
 | Architecture Plan | **Mandatory read of `PROJECT_ARCHITECTURE.md` before any changes/fixes** — maps full IPC topology, SQLite schemas, receipt pipelines, and React 18.3.1 pin to prevent breaking connected components (2026-08-29) |
 | Database | Single SQLite at `%PROGRAMDATA%\CityTiles\citytiles.db` via sqlx (plugin-sql removed) |
-| Client B | **Branch `client-b-sanitary`** — "Moon Pipe and Sanitary Store"; DB at `%PROGRAMDATA%\MoonPipe\moonpipe.db`; categories `sanitary \| hardware`; copper accent; tile logic removed from POS (2026-09-19) |
+| Client B | **Branch `client-b-sanitary`** — "Moon Pipe and Sanitary Store"; DB at `%PROGRAMDATA%\MoonPipe\moonpipe.db`; categories `sanitary \| hardware`; teal accent + rounded corners; tile logic removed from POS; installed at `D:\Projects\pos\Moon Pipe POS\` (2026-09-22) |
 | Payment rule | Invoice number tracks dues universally; customer balance mirrors any attached-customer due |
-| Code signing | Self-signed, publisher "AUZ Tech" |
+| Code signing | Self-signed, publisher **"AZ Solutions"** — cert at `signing-cert.pfx` in project root, password `MoonPipe2026`, valid to 2031 (2026-09-22) |
 | Stock policy | **Hard block on oversell** — invoice creation validates per-product stock in-transaction (aggregated across cart lines); no negative stock from sales, delivery date or not (2026-08-23) |
 | Seed products | 20 examples ship via migration 004 |
 | Printing | Receipts: **raster bitmap** (`GS v 0`) with bundled POS typefaces — Cormorant Garamond Bold banner + Karla body (`receipt_bitmap.rs`); device order = Windows spooler **RAW** first, direct USB fallback; classic ESC/POS text mode kept as automatic fallback; A4 genpdf invoices via "Download A4 PDF" (2026-08-23) |
@@ -687,7 +891,10 @@ remain unused by the UI; these semantic gaps are recorded so nobody "fixes" them
 | JWT secret | **Per-install random key file** `%PROGRAMDATA%\CityTiles\jwt.key`; env var wins; hardcoded fallback removed (2026-08-23) |
 | Money unit | **Whole rupees are canonical** everywhere incl. PDF invoices — no paise conversion anywhere (2026-08-23) |
 | Tile area | **Display only** — `area_per_tile` on products (REAL), `total_area` on invoice items (area_per_tile × qty, computed at checkout); 3 decimal places; bold on receipt; no pricing impact (2026-09-16) |
-| Invoice chain | **Unpaid balances carry forward** — `previous_balance` on invoices read from `customers.outstanding_balance` at creation; `total = subtotal - discount + previous_balance`; `outstanding_balance` SET to `MAX(0, total - amount_paid)` after creation; `mark_paid()` unchanged (2026-09-19) |
+| Invoice chain | **Unpaid balances carry forward** — `previous_balance` on invoices read from `customers.outstanding_balance` at creation; `total = subtotal - discount + previous_balance`; `outstanding_balance` SET to `MAX(0, total - amount_paid)` after creation; `mark_paid()` unchanged (2026-09-19). **Hardened 2026-10-03**: every absorbed source invoice marked; returns cascade the reduction through the whole carry chain (depth-capped) and balances recompute from leaf invoices; reports count net revenue (`total - previous_balance`) |
+| Supplier chain | **Supplier purchases mirror the invoice chain** — migration 017 added `previous_balance` + `carried_to_purchase_id` on `supplier_purchases`; `create()` carries the supplier balance into the new bill (grand total), SET (never `+=`) `suppliers.outstanding_balance`, marks absorbed open purchases; `mark_paid()` rejects absorbed POs naming the successor. Column is `carried_to_purchase_id`, **not** `carried_to_invoice_id` (2026-10-03) |
+| Balance truth | **Mirrors are derived, never hand-nudged** — `customers.outstanding_balance` / `suppliers.outstanding_balance` = SUM of due over non-carried open rows; recompute runs at startup + after backup restore (`services/reconciliation.rs`, warns on broken invariants); `customers::update_balance` delta API removed; manual `reconcile_balances` command has no UI button (removed 2026-10-03) |
+| System lock | **Secret combo `lockdownsystem`** — type within 4 seconds (no modifiers); locks system via `set_system_lock` (no JWT auth — combo IS auth); unlock via password `Areeb@1234` (bcrypt-hashed); lock state in `app_settings` table with HMAC signature; `require_unlocked()` middleware on all sensitive commands; fail-closed on missing/corrupt DB (2026-09-22) |
 | React version | **18.3.1 pinned (exact)** — react-dom 19 production builds wedge the signin page in an infinite event-dispatch loop in this app shape; ANY future React upgrade must re-pass the signin storm gauntlet + built-exe type-test first (2026-08-25) |
 | Invoice history window | **Recent-50 default + full-history search** (no pagination): list pages show newest 50; Invoices page search hits all history server-side, capped at 200 results (`SEARCH_CAP`) (2026-08-24) |
 | Sales retention | **Auto-purge settled invoices older than 12 months** on every app launch and after backup restore; unpaid/credit invoices are exempt until fully settled; a `VACUUM INTO` snapshot is mandatory before any delete — snapshot failure aborts the purge (2026-08-24) |
@@ -729,4 +936,4 @@ cargo tauri dev        # run app in dev
 cargo tauri build      # production MSI/NSIS installer
 ```
 
-**Status**: ~95% complete — system functional end-to-end in dev. Invoice chain feature implemented, uncommitted. Next: commit, rebuild installers for client B, live-machine testing, staff docs.
+**Status**: ~99% complete — carry-forward system complete (invoice chain hardened + supplier chain ported + reconcile cleanup), system lock implemented, signed installers built and tested on dev machine. Remaining: clean-machine install test → full manual matrix → staff docs.

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE invoices SET carried_to_invoice_id = ?\n                       WHERE customer_id = ? AND id != ?\n                         AND (total - amount_paid) > 0\n                         AND carried_to_invoice_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "8eabf29b9046ba08f5ffa3cd777381921a74bc87e0bd9bda0508b853b6b892bc"
+}

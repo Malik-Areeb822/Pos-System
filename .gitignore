@@ -13,6 +13,11 @@ dist
 # Environment / secrets
 .env
 .env.*
+*.pfx
+signing-cert.pfx
+
+# Agent / plan session state
+.opencode/
 
 # Lovable metadata
 .lovable/

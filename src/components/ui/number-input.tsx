@@ -2,7 +2,10 @@ import * as React from "react";
 
 import { Input } from "@/components/ui/input";
 
-type NumberInputProps = Omit<React.ComponentPropsWithoutRef<"input">, "type" | "onChange" | "onWheel" | "min"> & {
+type NumberInputProps = Omit<
+  React.ComponentPropsWithoutRef<"input">,
+  "type" | "onChange" | "onWheel" | "min"
+> & {
   /** Called with a digits-only string; existing `e.target.value` handlers keep working. */
   onChange?: React.ChangeEventHandler<HTMLInputElement>;
   /** Values below this clamp up on blur. */
@@ -24,7 +27,8 @@ type NumberInputProps = Omit<React.ComponentPropsWithoutRef<"input">, "type" | "
  */
 const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
   ({ value, defaultValue, onChange, onBlur, min = 0, decimal = false, ...props }, ref) => {
-    const sanitize = (raw: string) => decimal ? raw.replace(/[^0-9.]/g, "") : raw.replace(/[^0-9]/g, "");
+    const sanitize = (raw: string) =>
+      decimal ? raw.replace(/[^0-9.]/g, "") : raw.replace(/[^0-9]/g, "");
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const cleaned = sanitize(e.target.value);
@@ -37,7 +41,11 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
       if (cleaned !== "" && Number(cleaned) < min) cleaned = String(min);
       if (cleaned !== e.target.value) {
         e.target.value = cleaned;
-        onChange?.({ ...e, target: e.target, currentTarget: e.target } as React.ChangeEvent<HTMLInputElement>);
+        onChange?.({
+          ...e,
+          target: e.target,
+          currentTarget: e.target,
+        } as React.ChangeEvent<HTMLInputElement>);
       }
       onBlur?.(e);
     };

@@ -10,6 +10,7 @@ pub mod print;
 pub mod backup;
 pub mod suppliers;
 pub mod reconciliation;
+pub mod license;
 
 pub use auth::*;
 pub use products::*;

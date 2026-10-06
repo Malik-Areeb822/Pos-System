@@ -73,6 +73,29 @@ export function useInvoiceSearch(query: string) {
   });
 }
 
+// `list_invoices` defaults `limit` to 50 and the repository clamps the range
+// branch to min(limit, RANGE_CAP) — without an explicit limit a "range" query
+// would still come back as the newest 50 rows.
+const RANGE_LIMIT = 50_000;
+const CUSTOMER_LIMIT = 200;
+
+export function useInvoicesInRange(fromIso: string) {
+  const from = fromIso.trim();
+  return useQuery({
+    queryKey: ["invoices", "range", from],
+    queryFn: () => api.invoices.list({ from_date: from, limit: RANGE_LIMIT }),
+    enabled: from.length > 0,
+  });
+}
+
+export function useCustomerInvoices(customerId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ["invoices", "customer", customerId],
+    queryFn: () => api.invoices.list({ customer_id: customerId!, limit: CUSTOMER_LIMIT }),
+    enabled: enabled && !!customerId,
+  });
+}
+
 export function useInvoice(id: string) {
   return useQuery({
     queryKey: ["invoice", id],

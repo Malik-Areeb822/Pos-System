@@ -14,6 +14,7 @@ import { useCustomersForPOS, type Customer } from "@/features/pos/api";
 import { useCreateInvoice, usePrintReceipt } from "@/features/invoices/api";
 import { useCreateCustomer } from "@/features/customers/api";
 import { useProductsForPOS } from "@/features/pos/api";
+import { api } from "@/lib/api-client";
 
 export const Route = createFileRoute("/_authenticated/admin/pos")({
   component: PosPage,
@@ -72,9 +73,7 @@ function PosPage() {
     setLines((prev) => {
       const found = prev.find((l) => l.product.id === product.id);
       if (found)
-        return prev.map((l) =>
-          l.product.id === product.id ? { ...l, qty: l.qty + 1 } : l,
-        );
+        return prev.map((l) => (l.product.id === product.id ? { ...l, qty: l.qty + 1 } : l));
       return [...prev, { product, qty: 1 }];
     });
   }
@@ -124,16 +123,50 @@ function PosPage() {
       }
 
       const walkInName = walkIn.trim();
-      if (!customer && saveWalkIn && walkInName && walkInName.toLowerCase() !== "walk-in customer") {
+      if (
+        !customer &&
+        saveWalkIn &&
+        walkInName &&
+        walkInName.toLowerCase() !== "walk-in customer"
+      ) {
         const existing = customers.find(
-          (c) => c.name.trim().toLowerCase() === walkInName.toLowerCase()
-            && (c.phone?.trim() || null) === (walkInPhone.trim() || null),
+          (c) =>
+            c.name.trim().toLowerCase() === walkInName.toLowerCase() &&
+            (c.phone?.trim() || null) === (walkInPhone.trim() || null),
         );
         if (existing) {
           customer = existing;
         } else {
-          const created = await createCustomer.mutateAsync({ name: walkInName, phone: walkInPhone.trim() || null });
-          customer = created;
+          try {
+            customer = await createCustomer.mutateAsync({
+              name: walkInName,
+              phone: walkInPhone.trim() || null,
+            });
+          } catch (err) {
+            // The DB enforces a unique (name, phone) pair. A conflict here is
+            // not an error — reuse the existing customer so the sale proceeds.
+            const message = err instanceof Error ? err.message : String(err);
+            if (!message.startsWith("Conflict:")) throw err;
+            const fresh = await queryClient.fetchQuery({
+              queryKey: ["pos-customers"],
+              queryFn: () => api.customers.list(),
+            });
+            const match = fresh.find(
+              (c) =>
+                c.name.trim().toLowerCase() === walkInName.toLowerCase() &&
+                (c.phone?.trim() || null) === (walkInPhone.trim() || null),
+            );
+            if (match) {
+              customer = match;
+              toast.info(`Matched existing customer "${match.name}"`);
+            } else {
+              // Unresolvable race — continue as a walk-in rather than abort.
+              customer = null;
+              toast.warning(
+                "Customer already exists but could not be matched; continuing as walk-in",
+              );
+            }
+          }
         }
       }
 
@@ -169,6 +202,7 @@ function PosPage() {
       });
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
+      queryClient.invalidateQueries({ queryKey: ["pos-customers"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       navigate({ to: "/admin/invoices/$invoiceId", params: { invoiceId } });
@@ -298,9 +332,7 @@ function PosPage() {
               const setQty = (qty: number) =>
                 setLines((prev) =>
                   prev.map((x) =>
-                    x.product.id === l.product.id
-                      ? { ...x, qty: Math.max(1, qty) }
-                      : x,
+                    x.product.id === l.product.id ? { ...x, qty: Math.max(1, qty) } : x,
                   ),
                 );
               return (
@@ -393,20 +425,14 @@ function PosPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Discount (PKR)</Label>
-                <NumberInput
-                  value={discount}
-                  onChange={(e) => setDiscount(e.target.value)}
-                />
+                <NumberInput value={discount} onChange={(e) => setDiscount(e.target.value)} />
                 {Number(discount) > subtotal && subtotal > 0 && (
                   <p className="text-xs text-destructive">Capped at subtotal</p>
                 )}
               </div>
               <div className="space-y-2">
                 <Label>Amount paid</Label>
-                <NumberInput
-                  value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)}
-                />
+                <NumberInput value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} />
                 {Number(amountPaid) > total && total > 0 && (
                   <p className="text-xs text-destructive">Capped at total</p>
                 )}

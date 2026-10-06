@@ -29,11 +29,7 @@ function ReturnsPage() {
   const { data: returns = [] } = useReturns();
 
   // Real line items for the selected invoice (same command the detail page uses).
-  const {
-    data: detail,
-    isLoading: itemsLoading,
-    error: itemsError,
-  } = useInvoice(invoiceId);
+  const { data: detail, isLoading: itemsLoading, error: itemsError } = useInvoice(invoiceId);
 
   const invoice = invoices.find((i: Invoice) => i.id === invoiceId) ?? null;
   const items = detail?.items ?? [];
@@ -51,7 +47,10 @@ function ReturnsPage() {
   }, [returns, invoiceId]);
 
   const remainingOf = (item: InvoiceItem) =>
-    Math.max(0, Number(item.quantity) - (returnedBy.get(item.product_id ?? item.product_name) ?? 0));
+    Math.max(
+      0,
+      Number(item.quantity) - (returnedBy.get(item.product_id ?? item.product_name) ?? 0),
+    );
 
   const refundTotal = items.reduce(
     (acc, item) => acc + (Number(qty[item.id]) || 0) * Number(item.unit_price),
@@ -59,10 +58,7 @@ function ReturnsPage() {
   );
 
   // Join returns back to invoices for display (Return rows carry only ids).
-  const invoiceById = useMemo(
-    () => new Map(invoices.map((i: Invoice) => [i.id, i])),
-    [invoices],
-  );
+  const invoiceById = useMemo(() => new Map(invoices.map((i: Invoice) => [i.id, i])), [invoices]);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -207,7 +203,11 @@ function ReturnsPage() {
             <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
             <Input
               className="pl-9"
-              placeholder={invoice ? "Switch invoice — search number or customer" : "Search invoice number or customer"}
+              placeholder={
+                invoice
+                  ? "Switch invoice — search number or customer"
+                  : "Search invoice number or customer"
+              }
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />

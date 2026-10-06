@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(SUM(total - previous_balance), 0) FROM invoices WHERE date(created_at) = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "COALESCE(SUM(total - previous_balance), 0)",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9917b6456824b33bb54a506280ebf79c4faf0b59d67736b60e749aa71668fc92"
+}

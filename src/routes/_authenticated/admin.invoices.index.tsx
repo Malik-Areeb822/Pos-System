@@ -176,7 +176,9 @@ function InvoicesPage() {
                           <ArrowRight className="size-3" />
                         </Link>
                       ) : (
-                        <span className={balance > 0 ? "text-destructive" : "text-muted-foreground"}>
+                        <span
+                          className={balance > 0 ? "text-destructive" : "text-muted-foreground"}
+                        >
                           {currency(balance)}
                         </span>
                       )}

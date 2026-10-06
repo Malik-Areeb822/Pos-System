@@ -172,8 +172,8 @@ function SettingsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Replace current data?</AlertDialogTitle>
             <AlertDialogDescription>
-              Restoring{" "}
-              <span className="font-medium text-foreground">{pendingRestore?.name}</span> will{" "}
+              Restoring <span className="font-medium text-foreground">{pendingRestore?.name}</span>{" "}
+              will{" "}
               <span className="font-semibold text-destructive">
                 permanently replace every invoice, product, customer and user account
               </span>{" "}

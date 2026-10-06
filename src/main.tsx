@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import "./styles.css";
 import { reportLovableError } from "./lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
+import { LicenseGate } from "@/components/license/LicenseGate";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -93,7 +94,13 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} notFoundComponent={NotFoundComponent} errorComponent={ErrorComponent} />
+      <LicenseGate>
+        <RouterProvider
+          router={router}
+          notFoundComponent={NotFoundComponent}
+          errorComponent={ErrorComponent}
+        />
+      </LicenseGate>
       <Toaster position="top-right" closeButton />
     </QueryClientProvider>
   );

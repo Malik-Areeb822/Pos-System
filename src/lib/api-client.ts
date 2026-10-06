@@ -141,7 +141,6 @@ export interface CustomersApi {
   create(input: CreateCustomerInput): Promise<Customer>;
   update(id: string, input: Partial<CreateCustomerInput>): Promise<Customer>;
   delete(id: string): Promise<void>;
-  reconcile(): Promise<number>;
 }
 
 export interface MarkPaidInput {
@@ -152,6 +151,15 @@ export interface MarkPaidInput {
 
 export interface ListInvoicesParams {
   query?: string;
+  from_date?: string;
+  to_date?: string;
+  customer_id?: string;
+  /**
+   * Explicit row cap. `list_invoices` defaults this to 50, and the repository
+   * clamps the range/customer branches to `min(limit, RANGE_CAP|SEARCH_CAP)`
+   * — so a range query without an explicit limit still returns only 50 rows.
+   */
+  limit?: number;
 }
 
 export interface InvoicesApi {
@@ -258,6 +266,7 @@ export interface Customer {
   address: string | null;
   outstanding_balance: number;
   created_at: string;
+  invoice_count?: number;
 }
 
 export interface CreateCustomerInput {
@@ -349,6 +358,8 @@ export interface CreateReturnInput {
 export interface DashboardStats {
   total_sales_today: number;
   total_invoices_today: number;
+  sales_7d: number;
+  invoices_7d: number;
   low_stock_count: number;
   outstanding_balance: number;
   profit_today: number;
@@ -449,11 +460,13 @@ export interface SupplierPurchase {
   subtotal: number;
   discount: number;
   total: number;
+  previous_balance: number;
   amount_paid: number;
   payment_method: string;
   notes: string | null;
   created_at: string;
   updated_at: string;
+  carried_to_purchase_id: string | null;
 }
 
 export interface SupplierPurchaseItem {
@@ -501,9 +514,15 @@ export interface SuppliersApi {
   update(id: string, input: Partial<CreateSupplierInput>): Promise<Supplier>;
   delete(id: string): Promise<void>;
   listPurchases(params?: ListSupplierPurchasesParams): Promise<SupplierPurchase[]>;
-  getPurchaseWithItems(id: string): Promise<{ purchase: SupplierPurchase; items: SupplierPurchaseItem[] } | null>;
+  getPurchaseWithItems(
+    id: string,
+  ): Promise<{ purchase: SupplierPurchase; items: SupplierPurchaseItem[] } | null>;
   createPurchase(input: CreateSupplierPurchaseInput): Promise<SupplierPurchase>;
-  markPurchasePaid(input: { id: string; amount: number; payment_method: string }): Promise<SupplierPurchase>;
+  markPurchasePaid(input: {
+    id: string;
+    amount: number;
+    payment_method: string;
+  }): Promise<SupplierPurchase>;
 }
 
 export const api: ApiClient = {
@@ -524,7 +543,6 @@ export const api: ApiClient = {
     update: (id, input) =>
       apiInvoke("update_customer", { input: { ...input, id } }, { feature: "customers" }),
     delete: (id) => apiInvoke("delete_customer", { id }, { feature: "customers" }),
-    reconcile: () => apiInvoke("reconcile_balances", {}, { feature: "customers" }),
   },
   invoices: {
     list: (params?: ListInvoicesParams) =>
@@ -550,6 +568,7 @@ export const api: ApiClient = {
           business: {
             name: BUSINESS.name,
             branches: BUSINESS.branches,
+            bank: BUSINESS.bank,
             phone: BUSINESS.phone,
           },
         },

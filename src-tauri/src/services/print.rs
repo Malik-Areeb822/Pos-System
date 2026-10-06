@@ -24,9 +24,28 @@ pub struct BranchInfo {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+pub struct BankInfo {
+    pub name: String,
+    pub account: String,
+    pub title: String,
+}
+
+impl Default for BankInfo {
+    fn default() -> Self {
+        Self {
+            name: "Faysal Bank".into(),
+            account: "3419301000005678".into(),
+            title: "Hamza Zahid".into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct ReceiptBusiness {
     pub name: String,
     pub branches: Vec<BranchInfo>,
+    #[serde(default)]
+    pub bank: BankInfo,
     pub phone: String,
 }
 
@@ -44,6 +63,7 @@ impl Default for ReceiptBusiness {
                     address: "Murree Road, Kalapul, Opp Noor Masjid, Atd".into(),
                 },
             ],
+            bank: BankInfo::default(),
             phone: DEFAULT_BUSINESS_PHONE.to_string(),
         }
     }
@@ -305,6 +325,40 @@ fn two_col(left: &str, right: &str) -> String {
     out
 }
 
+/// Bold column header for the 4-column item grid (21 + 6 + 9 + 12 = 48).
+fn grid_head() -> String {
+    format!(
+        "{:<21}{:>6}{:>9}{:>12}\n",
+        "ITEM", "QTY", "RATE", "TOTAL"
+    )
+}
+
+/// One 4-column grid row: name left (wrapped to 21 chars), qty / rate /
+/// total right-aligned on the first line.
+fn grid_row(name: &str, qty: &str, rate: &str, total: &str) -> String {
+    const NAME_W: usize = 21;
+    let tail = format!("{:>6}{:>9}{:>12}", qty, rate, total);
+    let chars: Vec<char> = name.chars().collect();
+
+    let mut out = String::new();
+    let mut start = 0usize;
+    while start < chars.len() {
+        let end = (start + NAME_W).min(chars.len());
+        let chunk: String = chars[start..end].iter().collect();
+        if start == 0 {
+            out.push_str(&format!("{:<NAME_W$}{}", chunk, tail));
+        } else {
+            out.push_str(&chunk);
+        }
+        out.push('\n');
+        start = end;
+    }
+    if chars.is_empty() {
+        out.push_str(&format!("{:<NAME_W$}{}\n", "", tail));
+    }
+    out
+}
+
 /// Word-wrapped, manually centered line for the plain-text twin only.
 /// (On the thermal path the printer's own ESC a 1 center mode is used.)
 #[cfg_attr(windows, allow(dead_code))]
@@ -389,15 +443,33 @@ fn build_escpos_receipt(
     data.push(b'\n');
     data.extend_from_slice(&[GS, b'!', 0x00]); // normal size
 
-    // Branches — each on its own line, centered.
+    // Branches — left-aligned at the margin so both lines share the same
+    // left edge (centering the shorter line made it look like a subitem).
+    // Header block (branches, bank, phones) prints bold for attention.
+    data.extend_from_slice(&[ESC, b'E', 1]); // bold on
+    data.extend_from_slice(&[ESC, b'a', 0]);
     for branch in &business.branches {
         let line = format!("{}: {}", branch.label, branch.address);
         data.extend_from_slice(line.trim().as_bytes());
         data.push(b'\n');
     }
+    // Bank details — two centered lines under the branches, above the phones.
+    data.extend_from_slice(&[ESC, b'a', 1]);
+    data.extend_from_slice(business.bank.name.trim().as_bytes());
+    data.push(b'\n');
+    data.extend_from_slice(
+        format!(
+            "A/C {} \u{00B7} {}",
+            business.bank.account.trim(),
+            business.bank.title.trim()
+        )
+        .as_bytes(),
+    );
+    data.push(b'\n');
     // Phone numbers on a single centered line.
     data.extend_from_slice(business.phone.trim().as_bytes());
     data.push(b'\n');
+    data.extend_from_slice(&[ESC, b'E', 0]); // bold off
 
     data.extend_from_slice(rule('=').as_bytes());
 
@@ -408,22 +480,33 @@ fn build_escpos_receipt(
     data.extend_from_slice(two_col("Customer", &inv.customer_name).as_bytes());
     data.extend_from_slice(rule('-').as_bytes());
 
-    // Items: "qty x unit name" left, line total right; rate underneath.
+    // Items — 4-column grid: name / qty / rate / total (whole rupees, no
+    // per-row PKR prefix; the totals section below still shows PKR).
+    data.extend_from_slice(&[ESC, b'E', 1]); // bold header row
+    data.extend_from_slice(grid_head().as_bytes());
+    data.extend_from_slice(&[ESC, b'E', 0]);
     for item in items {
+        let mut name = item.product_name.clone();
+        if let Some(area) = item.total_area {
+            if area > 0.0 {
+                name.push_str(&format!(" (Area: {:.3} sqm)", area));
+            }
+        }
         data.extend_from_slice(
-            two_col(
-                &format!("{} x {} {}", item.quantity, item.unit, item.product_name),
-                &format_price(item.line_total),
+            grid_row(
+                &name,
+                &format!("{} {}", item.quantity, item.unit),
+                &item.unit_price.to_string(),
+                &item.line_total.to_string(),
             )
             .as_bytes(),
-        );
-        data.extend_from_slice(
-            format!("      @ {} / {}\n", format_price(item.unit_price), item.unit).as_bytes(),
         );
     }
     data.extend_from_slice(rule('-').as_bytes());
 
-    // Totals — TOTAL row emphasised with bold.
+    // Totals — every row bold so the block commands attention; TOTAL is the
+    // only one that additionally shouts via caps.
+    data.extend_from_slice(&[ESC, b'E', 1]); // bold on
     data.extend_from_slice(two_col("Subtotal", &format_price(inv.subtotal)).as_bytes());
     if inv.discount > 0 {
         data.extend_from_slice(
@@ -435,10 +518,10 @@ fn build_escpos_receipt(
             two_col("Previous balance", &format_price(inv.previous_balance)).as_bytes(),
         );
     }
-    data.extend_from_slice(&[ESC, b'E', 1]); // bold on
     data.extend_from_slice(two_col("TOTAL", &format_price(inv.total)).as_bytes());
-    data.extend_from_slice(&[ESC, b'E', 0]); // bold off
+    data.extend_from_slice(&[ESC, b'E', 0]); // bold off — keep the rule plain
     data.extend_from_slice(rule('=').as_bytes());
+    data.extend_from_slice(&[ESC, b'E', 1]); // bold on
     data.extend_from_slice(two_col("Paid", &format_price(inv.amount_paid)).as_bytes());
     if inv.amount_paid < inv.total {
         data.extend_from_slice(
@@ -446,6 +529,7 @@ fn build_escpos_receipt(
         );
     }
     data.extend_from_slice(format!("Method: {}\n", inv.payment_method).as_bytes());
+    data.extend_from_slice(&[ESC, b'E', 0]); // bold off
 
     if let Some(notes) = &inv.notes {
         if !notes.is_empty() {
@@ -455,9 +539,11 @@ fn build_escpos_receipt(
         }
     }
 
-    // Centered footer: thanks + developer credit.
+    // Centered footer: thanks + developer credit — bold for attention.
     data.extend_from_slice(&[ESC, b'a', 1]);
-    data.extend_from_slice(b"\nThank you!\nDeveloped by AZ Solutions\n03311203090\n");
+    data.extend_from_slice(&[ESC, b'E', 1]);
+    data.extend_from_slice(b"\nThank you!\nDeveloped by AZ Solutions\n03311203090 | 03298698926\n");
+    data.extend_from_slice(&[ESC, b'E', 0]);
 
     // Short trailing feed + auto cut (no page-sized waste — the printer only
     // feeds what we ask for).
@@ -477,20 +563,35 @@ fn build_text_receipt(
     out.push_str(&center_wrapped(DEFAULT_BUSINESS_NAME));
     let default_branches = ReceiptBusiness::default().branches;
     for branch in &default_branches {
-        out.push_str(&center_wrapped(&format!("{}: {}", branch.label, branch.address)));
+        // Left-aligned to match the raster path (same left edge for both).
+        out.push_str(&format!("{}\n", format!("{}: {}", branch.label, branch.address).trim()));
     }
+    let bank = BankInfo::default();
+    out.push_str(&center_wrapped(&bank.name));
+    out.push_str(&center_wrapped(&format!(
+        "A/C {} \u{00B7} {}",
+        bank.account, bank.title
+    )));
     out.push_str(&center_wrapped(DEFAULT_BUSINESS_PHONE));
     out.push_str(&rule('='));
     out.push_str(&two_col("Invoice", &inv.invoice_no));
     out.push_str(&two_col("Date", &format_timestamp(&inv.created_at)));
     out.push_str(&two_col("Customer", &inv.customer_name));
     out.push_str(&rule('-'));
+    out.push_str(&grid_head());
     for item in items {
-        out.push_str(&two_col(
-            &format!("{} x {} {}", item.quantity, item.unit, item.product_name),
-            &format_price(item.line_total),
+        let mut name = item.product_name.clone();
+        if let Some(area) = item.total_area {
+            if area > 0.0 {
+                name.push_str(&format!(" (Area: {:.3} sqm)", area));
+            }
+        }
+        out.push_str(&grid_row(
+            &name,
+            &format!("{} {}", item.quantity, item.unit),
+            &item.unit_price.to_string(),
+            &item.line_total.to_string(),
         ));
-        out.push_str(&format!("      @ {} / {}\n", format_price(item.unit_price), item.unit));
     }
     out.push_str(&rule('-'));
     out.push_str(&two_col("Subtotal", &format_price(inv.subtotal)));
@@ -516,7 +617,7 @@ fn build_text_receipt(
     }
     out.push_str(&center_wrapped("Thank you!"));
     out.push_str(&center_wrapped("Developed by AZ Solutions"));
-    out.push_str(&center_wrapped("03311203090"));
+    out.push_str(&center_wrapped("03311203090 | 03298698926"));
     out
 }
 

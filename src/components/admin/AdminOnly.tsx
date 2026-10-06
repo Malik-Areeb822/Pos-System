@@ -17,7 +17,8 @@ export function AdminOnly({ title, children }: { title: string; children: ReactN
         <ShieldAlert className="mx-auto size-8 text-brass" />
         <h2 className="mt-4 text-lg font-semibold">Admin access only</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          This section is restricted to the admin account. Use the Point of Sale screen to record sales.
+          This section is restricted to the admin account. Use the Point of Sale screen to record
+          sales.
         </p>
       </div>
     </AdminShell>

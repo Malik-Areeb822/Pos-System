@@ -1,4 +1,4 @@
-# Stone Flow POS — Complete Project Architecture Blueprint
+# Moon Pipe and Sanitary POS — Complete Project Architecture Blueprint
 
 > **Purpose**: Authoritative single-source reference of system architecture, data models, IPC bridges, hardware interfaces, component topologies, and inter-module dependencies. Scan this file to gain full context without needing to read the entire codebase.
 > **Constraint**: Codebase truth only. Do not edit database migrations once applied. Maintain React 18.3.1 pin and whole-rupee canonical currency format.
@@ -12,6 +12,7 @@
 │                           FRONTEND (React 18 / SPA)                             │
 │  • React 18.3.1 (pinned) • TanStack Router (file-based) • TanStack Query v5    │
 │  • Tailwind CSS 4 • Radix UI Primitives • Lucide React • Sonner Toasts          │
+│  • System Lock Gate (LicenseGate + KeyComboListener)                            │
 └────────────────────────────────────────┬────────────────────────────────────────┘
                                          │ Tauri IPC Bridge (`invoke` / events)
 ┌────────────────────────────────────────▼────────────────────────────────────────┐
@@ -19,34 +20,37 @@
 │  • Tauri v2 Runtime • Tokio Async Runtime • sqlx (SQLite driver)                │
 │  • JWT (HS256) + bcrypt (cost 12) • ab_glyph (TTF receipt rasterizer)           │
 │  • genpdf (A4 PDF renderer) • rusb (USB ESC/POS) • Windows Spooler API (RAW)    │
+│  • HMAC (lock state signing) • bcrypt (password verification)                   │
 └────────────────────────────────────────┬────────────────────────────────────────┘
                                          │ File I/O
 ┌────────────────────────────────────────▼────────────────────────────────────────┐
 │                               LOCAL STORAGE                                     │
-│  • SQLite DB: %PROGRAMDATA%\CityTiles\citytiles.db                              │
-│  • JWT Secret: %PROGRAMDATA%\CityTiles\jwt.key                                  │
-│  • Auth Store: localStorage ('city-tiles-auth')                                 │
+│  • SQLite DB: %PROGRAMDATA%\MoonPipe\moonpipe.db                               │
+│  • JWT Secret: %PROGRAMDATA%\MoonPipe\jwt.key                                  │
+│  • Auth Store: localStorage ('moonpipe-auth')                                   │
+│  • Code Signing: CN=AZ Solutions (self-signed, valid to 2031)                   │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 | Layer | Technology | Key File / Path |
 |---|---|---|
-| **Desktop Shell** | Tauri v2 (Rust backend + Webview2 frontend) | [src-tauri/tauri.conf.json](file:///C:/Users/Malik%20Areeb%20Ahmed/OneDrive/Desktop/stone-flow-pos-main/src-tauri/tauri.conf.json) |
-| **Frontend Framework** | React 18.3.1 (exact pin) + TypeScript + Vite | [package.json](file:///C:/Users/Malik%20Areeb%20Ahmed/OneDrive/Desktop/stone-flow-pos-main/package.json) |
-| **Routing** | TanStack Router (type-safe file routes) | [src/routes/](file:///C:/Users/Malik%20Areeb%20Ahmed/OneDrive/Desktop/stone-flow-pos-main/src/routes/) |
-| **State & Cache** | TanStack Query v5 (React Query) + Zustand | [src/lib/api-client.ts](file:///C:/Users/Malik%20Areeb%20Ahmed/OneDrive/Desktop/stone-flow-pos-main/src/lib/api-client.ts) |
-| **Backend Core** | Rust (Tokio, sqlx, serde, tauri) | [src-tauri/src/lib.rs](file:///C:/Users/Malik%20Areeb%20Ahmed/OneDrive/Desktop/stone-flow-pos-main/src-tauri/src/lib.rs) |
-| **Database** | SQLite via `sqlx::SqlitePool` | `%PROGRAMDATA%\CityTiles\citytiles.db` |
-| **Receipt Rasterizer** | Monochrome Bitmap Generator (`ab_glyph` + `GS v 0`) | [src-tauri/src/services/receipt_bitmap.rs](file:///C:/Users/Malik%20Areeb%20Ahmed/OneDrive/Desktop/stone-flow-pos-main/src-tauri/src/services/receipt_bitmap.rs) |
-| **Printer Transport** | Windows Spooler RAW API + Direct USB (`rusb`) | [src-tauri/src/services/print.rs](file:///C:/Users/Malik%20Areeb%20Ahmed/OneDrive/Desktop/stone-flow-pos-main/src-tauri/src/services/print.rs) |
-| **PDF Engine** | `genpdf` with embedded DejaVuSans TTF fonts | [src-tauri/src/services/invoice_pdf.rs](file:///C:/Users/Malik%20Areeb%20Ahmed/OneDrive/Desktop/stone-flow-pos-main/src-tauri/src/services/invoice_pdf.rs) |
+| **Desktop Shell** | Tauri v2 (Rust backend + Webview2 frontend) | [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) |
+| **Frontend Framework** | React 18.3.1 (exact pin) + TypeScript + Vite | [package.json](package.json) |
+| **Routing** | TanStack Router (type-safe file routes) | [src/routes/](src/routes/) |
+| **State & Cache** | TanStack Query v5 (React Query) + Zustand | [src/lib/api-client.ts](src/lib/api-client.ts) |
+| **Backend Core** | Rust (Tokio, sqlx, serde, tauri) | [src-tauri/src/lib.rs](src-tauri/src/lib.rs) |
+| **Database** | SQLite via `sqlx::SqlitePool` | `%PROGRAMDATA%\MoonPipe\moonpipe.db` |
+| **System Lock** | HMAC-signed lock state + bcrypt password | [src-tauri/src/license/mod.rs](src-tauri/src/license/mod.rs) |
+| **Receipt Rasterizer** | Monochrome Bitmap Generator (`ab_glyph` + `GS v 0`) | [src-tauri/src/services/receipt_bitmap.rs](src-tauri/src/services/receipt_bitmap.rs) |
+| **Printer Transport** | Windows Spooler RAW API + Direct USB (`rusb`) | [src-tauri/src/services/print.rs](src-tauri/src/services/print.rs) |
+| **PDF Engine** | `genpdf` with embedded DejaVuSans TTF fonts | [src-tauri/src/services/invoice_pdf.rs](src-tauri/src/services/invoice_pdf.rs) |
 
 ---
 
 ## 2. Directory Structure & Location Map
 
 ```
-stone-flow-pos-main/
+moonpipe-pos-main/
 ├── src/                                         # FRONTEND (React SPA)
 │   ├── main.tsx                                 # SPA Root Entry Point
 │   ├── tauri-entry.tsx                          # Tauri WebView Entry Mount
@@ -55,23 +59,31 @@ stone-flow-pos-main/
 │   │   │   ├── AdminShell.tsx                   # Main Admin/Staff Navigation Shell
 │   │   │   ├── AdminOnly.tsx                    # Route Guard: Admin Role Only
 │   │   │   └── AccessGate.tsx                   # Route Guard: Profile Approval Check
+│   │   ├── license/
+│   │   │   ├── KeyComboListener.tsx             # Secret combo detector (lockdownsystem)
+│   │   │   ├── LockScreen.tsx                   # Full-screen lock overlay
+│   │   │   └── LicenseGate.tsx                  # Top-level lock state gate
 │   │   └── ui/                                  # 40+ Radix UI Primitives (Button, Dialog, Table, etc.)
 │   ├── features/                                # Feature API Modules
 │   │   ├── auth/                                # Authentication API Hooks & Stores
+│   │   ├── license/                             # System Lock API Hooks
+│   │   │   └── api.ts                           # checkSystemLock(), unlockWithPassword()
 │   │   └── suppliers/                           # Supplier & Purchase Ledger API Hooks
 │   ├── lib/                                     # Frontend Infrastructure
 │   │   ├── api-client.ts                        # IPC Wrapper (Tauri commands bridge)
 │   │   ├── tauri-events.ts                      # Backend Realtime Event Listeners
 │   │   ├── auth-store.ts                        # Zustand Auth Store (persisted to localStorage)
+│   │   ├── license-store.ts                     # Zustand Lock State Store
 │   │   ├── business.ts                          # Business Store Identity Constants
 │   │   └── file-save.ts                         # File Export Utilities (Save Dialog)
+│   ├── styles.css                               # Tailwind CSS + custom properties (teal accent)
 │   └── routes/                                  # File-Based Route Tree
 │       ├── __root.tsx                           # Root Provider Layout (QueryClient, Toaster)
 │       ├── index.tsx                            # Login / Staff Sign-in / First-Admin Setup
 │       └── _authenticated/                      # Guarded Staff Routes
 │           ├── route.tsx                        # Layout Guard (AccessGate + Auth Check)
 │           ├── admin.index.tsx                  # Admin Dashboard (Stats, Low Stock, Recent Invoices)
-│           ├── admin.pos.tsx                    # POS Checkout Screen (Tile calculations, Cart)
+│           ├── admin.pos.tsx                    # POS Checkout Screen (Cart, Customer selection)
 │           ├── admin.inventory.tsx              # Inventory CRUD & Excel Import/Export
 │           ├── admin.customers.tsx              # Customer CRM & Outstanding Balance
 │           ├── admin.invoices.index.tsx         # Invoice History (Recent 50 + Server Search)
@@ -85,10 +97,13 @@ stone-flow-pos-main/
 └── src-tauri/                                   # BACKEND (Rust & Tauri Shell)
     ├── tauri.conf.json                          # Tauri App Config & Window Parameters
     ├── Cargo.toml                               # Rust Dependencies & Features
+    ├── signing-cert.pfx                         # Self-signed code signing cert (CN=AZ Solutions)
     └── src/
         ├── main.rs                              # Windows Binary Entry
         ├── lib.rs                               # Main Tauri Builder & Command Registry
         ├── error.rs                             # Unified AppError Types & Serialization
+        ├── license/
+        │   └── mod.rs                           # HMAC signing, bcrypt verification, lock state
         ├── commands/                            # IPC Command Handlers
         │   ├── auth.rs                          # Login, Register, Password Reset, Status Change
         │   ├── products.rs                      # Product CRUD & Stock Queries
@@ -99,22 +114,33 @@ stone-flow-pos-main/
         │   ├── print.rs                         # Thermal Receipt & PDF Invoice Commands
         │   ├── backup.rs                        # DB Snapshot, Restore & Purge Commands
         │   ├── cashiers.rs                      # Staff Approval & Cashier Admin Queries
-        │   └── suppliers.rs                     # Supplier CRUD & Purchase Ledger Commands
+        │   ├── suppliers.rs                     # Supplier CRUD & Purchase Ledger Commands
+        │   ├── reconciliation.rs                # Balance Reconciliation Command
+        │   └── license.rs                       # System Lock Check/Set/Unlock Commands
         ├── database/                            # Database Infrastructure
         │   ├── connection.rs                    # SqlitePool Connection & Path Resolver
         │   └── migrations/                      # Embedded SQL Migrations (IMMUTABLE!)
         │       ├── 001_initial_schema.sql       # Schema Tables, Enums, Indexes
-        │       ├── 002_sequences.sql            # Invoice Sequence Generator
-        │       ├── 003_defaults.sql             # Initial Default Data
-        │       ├── 004_seed_products.sql        # 20 Sample Products
-        │       ├── 005_sales_retention.sql      # Sales Auto-Retention Indexes
-    │   ├── 007_suppliers.sql            # Supplier Directory & Purchase Ledger Tables
-    │   ├── 008_tile_area.sql            # Tile Area Per Tile (REAL) + Invoice Item Total Area (REAL)
-    │   └── 009_invoice_previous_balance.sql  # Invoice Previous Balance (INTEGER) for carry-forward
+        │       ├── 002_enum_constraints.sql     # Category & Status CHECK Constraints
+        │       ├── 003_invoice_counter.sql      # Invoice Sequence Generator
+        │       ├── 004_seed_data.sql            # 20 Sample Products
+        │       ├── 005_admin_user.sql           # Default Admin User
+        │       ├── 006_product_company.sql      # Company field for products
+        │       ├── 007_suppliers.sql            # Supplier Directory & Purchase Ledger Tables
+        │       ├── 008_tile_area.sql            # Tile Area Per Tile (REAL) + Invoice Item Total Area (REAL)
+        │       ├── 009_invoice_previous_balance.sql  # Invoice Previous Balance (INTEGER) for carry-forward
+        │       ├── 010_add_purchase_price.sql   # Purchase price for profit tracking
+        │       ├── 011_seed_moonpipe.sql        # Moon Pipe seed products
+        │       ├── 012_cleanup_citytiles_seed.sql  # Remove CityTiles seed data
+        │       ├── 013_add_hardware_category.sql  # Add 'hardware' category
+        │       ├── 014_add_carried_to_invoice_id.sql  # Invoice carry-forward tracking
+        │       ├── 015_add_invoice_constraints.sql  # Discount/paid CHECK constraints
+        │       ├── 016_add_app_settings.sql     # App Settings table (lock state)
+        │       └── 017_supplier_purchase_carry_forward.sql  # Supplier purchase carry-forward (previous_balance + carried_to_purchase_id)
         ├── repositories/                        # SQL Abstraction & Business Logic
         │   ├── auth.rs                          # User Profile & Role Repository
         │   ├── products.rs                      # Product Repository & Stock Mutators
-        │   ├── customers.rs                     # Customer Repository & Balance Mutators
+        │   ├── customers.rs                     # Customer Repository (balance is derived, not mutated — see services/reconciliation.rs)
         │   ├── invoices.rs                      # Invoice Repository (Stock validation, Purge)
         │   ├── returns.rs                       # Return Repository (Stock restoral, Balance adjust)
         │   ├── reports.rs                       # Report Aggregation Queries
@@ -124,7 +150,8 @@ stone-flow-pos-main/
         │   ├── print.rs                         # ESC/POS Spooler RAW & USB Transport
         │   ├── invoice_pdf.rs                   # A4 PDF Invoice Generator (genpdf)
         │   ├── csv_import.rs                    # Flexible Excel/CSV Importer
-        │   └── backup.rs                        # VACUUM INTO Backup & Restore Engine
+        │   ├── backup.rs                        # VACUUM INTO Backup & Restore Engine
+        │   └── reconciliation.rs                # Balance Reconciliation Service
         └── assets/
             └── fonts/                           # Embedded Fonts (Karla, Cormorant Garamond, DejaVu)
 ```
@@ -133,7 +160,7 @@ stone-flow-pos-main/
 
 ## 3. Database Schema (SQLite)
 
-Located at `%PROGRAMDATA%\CityTiles\citytiles.db`. All monetary amounts are stored in **whole rupees (PKR)** as `INTEGER` (`i64`).
+Located at `%PROGRAMDATA%\MoonPipe\moonpipe.db`. All monetary amounts are stored in **whole rupees (PKR)** as `INTEGER` (`i64`).
 
 ```sql
 -- 1. Profiles (Staff & Admin Accounts)
@@ -172,7 +199,8 @@ CREATE TABLE products (
     finish TEXT,
     company TEXT,
     unit TEXT NOT NULL DEFAULT 'sqft',
-    price INTEGER NOT NULL DEFAULT 0, -- Whole rupees
+    price INTEGER NOT NULL DEFAULT 0, -- Whole rupees (selling price)
+    purchase_price INTEGER,          -- Cost price for profit tracking
     pieces_per_carton INTEGER,
     area_per_tile REAL,              -- Tile area in sqm (only for 'tiles' category)
     stock_qty INTEGER NOT NULL DEFAULT 0,
@@ -207,6 +235,7 @@ CREATE TABLE invoices (
     amount_paid INTEGER NOT NULL DEFAULT 0,
     payment_method TEXT NOT NULL DEFAULT 'cash', -- 'cash' | 'bank' | 'credit'
     previous_balance INTEGER NOT NULL DEFAULT 0, -- Carried from customer's outstanding_balance at creation
+    carried_to_invoice_id TEXT REFERENCES invoices(id), -- Invoice this balance was carried forward to
     notes TEXT,
     delivery_date TEXT,
     created_by TEXT REFERENCES profiles(id),
@@ -277,13 +306,16 @@ CREATE TABLE supplier_purchases (
     supplier_name TEXT NOT NULL,
     subtotal INTEGER NOT NULL DEFAULT 0,
     discount INTEGER NOT NULL DEFAULT 0,
-    total INTEGER NOT NULL DEFAULT 0,
+    total INTEGER NOT NULL DEFAULT 0, -- = subtotal - discount + previous_balance (backend-computed)
+    previous_balance INTEGER NOT NULL DEFAULT 0, -- Carried from supplier's outstanding_balance at creation
+    carried_to_purchase_id TEXT REFERENCES supplier_purchases(id), -- Purchase this balance was carried forward to (NULL = chain leaf)
     amount_paid INTEGER NOT NULL DEFAULT 0,
     payment_method TEXT NOT NULL DEFAULT 'cash',
     notes TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+CREATE INDEX idx_supplier_purchases_carried_to ON supplier_purchases(carried_to_purchase_id);
 
 -- 11. Supplier Purchase Items (Purchase Line Items)
 CREATE TABLE supplier_purchase_items (
@@ -296,6 +328,14 @@ CREATE TABLE supplier_purchase_items (
     line_total INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
+
+-- 12. App Settings (Key-Value Store)
+CREATE TABLE app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX idx_app_settings_key ON app_settings(key);
 ```
 
 ---
@@ -325,7 +365,11 @@ CREATE TABLE supplier_purchase_items (
                                       │ 5. Insert into `invoice_items`            │
                                       │    └─ total_area = area_per_tile × qty    │
                                       │ 6. UPDATE products SET stock_qty          │
-                                      │ 7. UPDATE customers SET outstanding_      │
+                                      │ 7. Mark absorbed source invoices:         │
+                                      │    UPDATE invoices SET carried_to_        │
+                                      │    invoice_id = <new id> WHERE customer   │
+                                      │    AND open AND uncarried (every one)     │
+                                      │ 8. UPDATE customers SET outstanding_      │
                                       │    balance = MAX(0, total - amount_paid)  │
                                       └─────────────────────┬─────────────────────┘
                                                             │
@@ -376,7 +420,11 @@ CREATE TABLE supplier_purchase_items (
                      │ 1. Create `returns` & `return_items`      │
                      │ 2. UPDATE products SET stock_qty + qty    │
                      │ 3. Adjust `invoices.total` & `amount_paid`│
-                     │ 4. Decrement customer outstanding_balance │
+                     │    + cascade the reduction forward through│
+                     │    `carried_to_invoice_id` successors     │
+                     │    (depth-capped walk)                    │
+                     │ 4. Recompute customer outstanding_balance │
+                     │    from LEAF invoices (never `+=` nudge)  │
                      └─────────────────────┬─────────────────────┘
                                            │
                      ┌─────────────────────┴─────────────────────┐
@@ -397,9 +445,16 @@ CREATE TABLE supplier_purchase_items (
                        ┌─────────────────────────────┴─────────────────────────────┐
                        │ In-Transaction Execution                                  │
                        │ 1. Validate supplier_id exists                            │
-                       │ 2. Insert into `supplier_purchases` (PUR-YYYY-NNNN)       │
-                       │ 3. Insert into `supplier_purchase_items` (line items)      │
-                       │ 4. UPDATE suppliers SET outstanding_balance += (total-paid) │
+                       │ 2. Read supplier outstanding_balance → previous_balance   │
+                       │ 3. Compute total = subtotal - discount + previous_balance │
+                       │    (Amount Paid clamped to grand total)                   │
+                       │ 4. Insert into `supplier_purchases` (PUR-YYYY-NNNN)       │
+                       │    with carried_to_purchase_id = NULL (chain head)        │
+                       │ 5. Insert into `supplier_purchase_items` (line items)     │
+                       │ 6. If previous_balance > 0: mark EVERY open uncarried     │
+                       │    purchase carried_to_purchase_id = <new id>             │
+                       │ 7. UPDATE suppliers SET outstanding_balance =             │
+                       │    MAX(0, total - amount_paid)   (SET, never `+=`)        │
                        └─────────────────────────────┬─────────────────────────────┘
                                                      │
                        ┌─────────────────────────────┴─────────────────────────────┐
@@ -413,8 +468,11 @@ CREATE TABLE supplier_purchase_items (
                                                        │
                      ┌─────────────────────────────────┴─────────────────────────────┐
                      │ In-Transaction Execution                                      │
+                     │ 0. GUARD: if carried_to_purchase_id IS SET → reject with      │
+                     │    validation error naming the successor purchase_no          │
                      │ 1. UPDATE supplier_purchases SET amount_paid = total          │
-                     │ 2. UPDATE suppliers SET outstanding_balance = MAX(0, bal-total)│
+                     │ 2. Recompute supplier outstanding_balance from the ledger     │
+                     │    (leaf purchases only)                                      │
                      └─────────────────────────────────┬─────────────────────────────┘
                                                        │
                      ┌─────────────────────────────────┴─────────────────────────────┐
@@ -453,8 +511,12 @@ The frontend interacts with Rust backend commands exclusively through `apiInvoke
 | **Suppliers** | `list_supplier_purchases` | `commands/suppliers.rs` | `apiClient.suppliers.listPurchases` | Lists purchases for a supplier (newest first) |
 | **Suppliers** | `get_supplier_purchase` | `commands/suppliers.rs` | `apiClient.suppliers.getPurchase` | Returns single purchase by ID |
 | **Suppliers** | `get_supplier_purchase_with_items` | `commands/suppliers.rs` | `apiClient.suppliers.getPurchaseWithItems` | Returns purchase + line items tuple → `{ purchase, items }` |
-| **Suppliers** | `create_supplier_purchase` | `commands/suppliers.rs` | `apiClient.suppliers.createPurchase` | Creates purchase with line items, updates supplier outstanding_balance |
-| **Suppliers** | `mark_supplier_purchase_paid` | `commands/suppliers.rs` | `apiClient.suppliers.markPurchasePaid` | Marks purchase as paid, decrements supplier outstanding_balance |
+| **Suppliers** | `create_supplier_purchase` | `commands/suppliers.rs` | `apiClient.suppliers.createPurchase` | Carries supplier balance into purchase (`previous_balance`), total = subtotal − discount + previous_balance, marks absorbed open purchases, SETs supplier outstanding_balance |
+| **Suppliers** | `mark_supplier_purchase_paid` | `commands/suppliers.rs` | `apiClient.suppliers.markPurchasePaid` | Marks purchase as paid — **rejected** if the purchase was carried forward (names the successor); recomputes supplier balance from the ledger |
+| **Reconciliation** | `reconcile_balances` | `commands/reconciliation.rs` | — (no UI since 2026-10-03) | Recomputes **customer + supplier** balances from non-carried open rows; runs automatically at startup and after backup restore |
+| **License** | `check_system_lock` | `commands/license.rs` | `checkSystemLock()` | Returns lock status from app_settings (no auth required) |
+| **License** | `set_system_lock` | `commands/license.rs` | via invoke directly | Sets lock state (no JWT — combo IS the authentication) |
+| **License** | `unlock_with_password` | `commands/license.rs` | `unlockWithPassword()` | Verifies bcrypt password hash, unlocks system |
 
 ---
 
@@ -466,7 +528,7 @@ The frontend interacts with Rust backend commands exclusively through `apiInvoke
 
 > [!IMPORTANT]
 > **2. Migration Immutability**
-> Never modify existing SQL files in [src-tauri/src/database/migrations/](file:///C:/Users/Malik%20Areeb%20Ahmed/OneDrive/Desktop/stone-flow-pos-main/src-tauri/src/database/migrations/). `sqlx` validates checksums on startup. Editing existing migrations will crash every installed application. All future schema alterations must go in new numbered migration files (e.g. `006_feature_name.sql`).
+> Never modify existing SQL files in [src-tauri/src/database/migrations/](src-tauri/src/database/migrations/). `sqlx` validates checksums on startup. Editing existing migrations will crash every installed application. All future schema alterations must go in new numbered migration files (e.g. `017_feature_name.sql`).
 
 > [!IMPORTANT]
 > **3. Whole Rupees Canonical Format**
@@ -482,4 +544,16 @@ The frontend interacts with Rust backend commands exclusively through `apiInvoke
 
 > [!IMPORTANT]
 > **6. Invoice Chain — Unpaid Balances Carry Forward**
-> When creating an invoice for a named customer with an outstanding balance, the balance is read from `customers.outstanding_balance` and stored as `previous_balance` on the new invoice. The invoice `total` is computed as `subtotal - discount + previous_balance`. After payment, `outstanding_balance` is SET to `MAX(0, total - amount_paid)` — not accumulated. `mark_paid()` subtracts from the customer balance as before.
+> When creating an invoice for a named customer with an outstanding balance, the balance is read from `customers.outstanding_balance` and stored as `previous_balance` on the new invoice. The invoice `total` is computed as `subtotal - discount + previous_balance`. After payment, `outstanding_balance` is SET to `MAX(0, total - amount_paid)` — not accumulated. Every open invoice absorbed by the carry is marked `carried_to_invoice_id = <new id>`. Returns cascade the reduction through the whole `carried_to_invoice_id` chain (depth-capped) and balances are recomputed from **leaf** invoices only. `customers.outstanding_balance` is a **mirror**: it equals `SUM(total - amount_paid)` over non-carried open invoices and is re-derived at startup and after every backup restore (`services/reconciliation.rs`) — never hand-edited. All sales/revenue aggregates use `total - previous_balance` (net revenue — `previous_balance` was already counted when it first changed hands).
+
+> [!IMPORTANT]
+> **7. System Lock — Secret Combo**
+> Type `lockdownsystem` within 4 seconds (no modifiers) to lock the system. Lock state persists in `app_settings` table with HMAC signature. Only the password (`Areeb@1234`, bcrypt-hashed) can unlock. The key combo listener is active in all states (locked and unlocked). It does NOT trigger on input/textarea/contenteditable elements. The `set_system_lock` command has NO JWT authentication — the combo itself IS the authentication. `require_unlocked()` middleware blocks all sensitive commands when locked.
+
+> [!IMPORTANT]
+> **8. Code Signing**
+> Self-signed certificate `CN=AZ Solutions` (SHA-256, valid to 2031). Password: `MoonPipe2026`. Both MSI and NSIS installers are signed with DigiCert RFC3161 timestamp via `signtool.exe`. SmartScreen warnings are expected for self-signed certs. Certificate file: `signing-cert.pfx` in project root.
+
+> [!IMPORTANT]
+> **9. Supplier Purchase Chain — Mirror of the Invoice Chain**
+> `supplier_purchases.previous_balance` is read from `suppliers.outstanding_balance` at creation; `total = subtotal - discount + previous_balance`; supplier balance is SET to `MAX(0, total - amount_paid)` (never `+=`). Absorbed open purchases are marked `carried_to_purchase_id = <new id>` (all of them). `mark_supplier_purchase_paid` rejects purchases with a non-NULL `carried_to_purchase_id`, naming the successor. `suppliers.outstanding_balance` is derived from non-carried open purchases and re-computed by the same reconciliation pass that fixes customers. Column name is `carried_to_purchase_id` — **never** `carried_to_invoice_id` (migration 017).

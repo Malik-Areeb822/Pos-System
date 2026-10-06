@@ -6,10 +6,24 @@ import { toast } from "sonner";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AdminOnly } from "@/components/admin/AdminOnly";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useCashiers, useApproveCashier, useRejectCashier, useSuspendCashier, useResetCashierPassword, type StaffProfile } from "@/features/cashiers/api";
+import {
+  useCashiers,
+  useApproveCashier,
+  useRejectCashier,
+  useSuspendCashier,
+  useResetCashierPassword,
+  type StaffProfile,
+} from "@/features/cashiers/api";
 import { formatDate } from "@/features/invoices/api";
 
 export const Route = createFileRoute("/_authenticated/admin/cashiers")({
@@ -26,7 +40,10 @@ export const Route = createFileRoute("/_authenticated/admin/cashiers")({
         content: "Approve, reject, suspend or reactivate cashier accounts for the Moon Pipe POS.",
       },
       { property: "og:title", content: "Cashier Management | Moon Pipe POS" },
-      { property: "og:description", content: "Admin approval queue for Moon Pipe cashier accounts." },
+      {
+        property: "og:description",
+        content: "Admin approval queue for Moon Pipe cashier accounts.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],

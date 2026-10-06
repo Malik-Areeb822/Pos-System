@@ -9,6 +9,8 @@ export type Customer = {
   address: string | null;
   outstanding_balance: number;
   created_at: string;
+  /** LEFT JOIN aggregate on `invoices` — present on list/get, absent on create/update. */
+  invoice_count?: number;
 };
 
 export type CreateCustomerInput = {
@@ -39,6 +41,7 @@ export function useCreateCustomer() {
     mutationFn: (input: CreateCustomerInput) => api.customers.create(input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["customers"] });
+      queryClient.invalidateQueries({ queryKey: ["pos-customers"] });
     },
   });
 }
@@ -50,6 +53,7 @@ export function useUpdateCustomer() {
       api.customers.update(id, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["customers"] });
+      queryClient.invalidateQueries({ queryKey: ["pos-customers"] });
     },
   });
 }
@@ -60,17 +64,7 @@ export function useDeleteCustomer() {
     mutationFn: (id: string) => api.customers.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["customers"] });
-    },
-  });
-}
-
-export function useReconcileBalances() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.customers.reconcile(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["pos-customers"] });
     },
   });
 }

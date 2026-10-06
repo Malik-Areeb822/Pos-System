@@ -2,7 +2,12 @@ import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-export type TauriEventName = "invoices:changed" | "customers:changed" | "products:changed" | "cashiers:changed" | "suppliers:changed";
+export type TauriEventName =
+  | "invoices:changed"
+  | "customers:changed"
+  | "products:changed"
+  | "cashiers:changed"
+  | "suppliers:changed";
 
 export interface EventSubscription {
   unlisten: () => Promise<void>;
@@ -10,7 +15,10 @@ export interface EventSubscription {
 
 const subscriptions = new Map<TauriEventName, UnlistenFn>();
 
-export async function subscribeToEvent(eventName: TauriEventName, handler: () => void): Promise<EventSubscription> {
+export async function subscribeToEvent(
+  eventName: TauriEventName,
+  handler: () => void,
+): Promise<EventSubscription> {
   if (subscriptions.has(eventName)) {
     await subscriptions.get(eventName)!();
   }

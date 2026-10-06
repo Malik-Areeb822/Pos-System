@@ -1,5 +1,4 @@
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, Package, AlertTriangle, Wallet, DollarSign } from "lucide-react";
 
 import { AdminShell } from "@/components/admin/AdminShell";
@@ -24,23 +23,16 @@ function DashboardGate() {
   return <DashboardPage />;
 }
 
-function sumBetween(invoices: { created_at: string; total: number }[], days: number) {
-  const from = Date.now() - days * 24 * 60 * 60 * 1000;
-  return invoices
-    .filter((i) => new Date(i.created_at).getTime() >= from)
-    .reduce((acc, i) => acc + Number(i.total), 0);
-}
-
 function DashboardPage() {
   const { data: dashboard } = useDashboard();
   const { data: invoices = [] } = useInvoices();
   const { data: products = [] } = useProducts();
 
-  const today = invoices.filter(
-    (i) => new Date(i.created_at).toDateString() === new Date().toDateString(),
-  );
   const lowStock = products.filter((p) => p.stock_qty <= p.low_stock_threshold);
-  const stockValue = products.reduce((acc, p) => acc + Number(p.price) * Math.max(0, Number(p.stock_qty)), 0);
+  const stockValue = products.reduce(
+    (acc, p) => acc + Number(p.price) * Math.max(0, Number(p.stock_qty)),
+    0,
+  );
   const outstanding = dashboard?.outstanding_balance ?? 0;
 
   const bestSellers = products
@@ -49,14 +41,52 @@ function DashboardPage() {
     .sort((a, b) => Number(b.price) * b.stock_qty - Number(a.price) * a.stock_qty)
     .slice(0, 5);
 
+  // Backend aggregates (net revenue over local-midnight bounds) — the old
+  // `sumBetween` helper computed these from the recent-50 invoice window and
+  // was wrong for every day beyond it.
   const cards = [
-    { label: "Sales today", value: currency(sumBetween(invoices, 1)), sub: `${today.length} invoices`, icon: TrendingUp },
-    { label: "Last 7 days", value: currency(sumBetween(invoices, 7)), sub: "rolling week", icon: TrendingUp },
-    { label: "Stock value", value: currency(stockValue), sub: `${products.length} products`, icon: Package },
-    { label: "Outstanding credit", value: currency(outstanding), sub: "unpaid balances", icon: Wallet },
-    { label: "Profit today", value: currency(dashboard?.profit_today ?? 0), sub: "gross margin", icon: DollarSign },
-    { label: "Profit 7 days", value: currency(dashboard?.profit_7d ?? 0), sub: "rolling week", icon: DollarSign },
-    { label: "Profit 30 days", value: currency(dashboard?.profit_30d ?? 0), sub: "rolling month", icon: DollarSign },
+    {
+      label: "Sales today",
+      value: currency(dashboard?.total_sales_today ?? 0),
+      sub: `${dashboard?.total_invoices_today ?? 0} invoices`,
+      icon: TrendingUp,
+    },
+    {
+      label: "Last 7 days",
+      value: currency(dashboard?.sales_7d ?? 0),
+      sub: "rolling week",
+      icon: TrendingUp,
+    },
+    {
+      label: "Stock value",
+      value: currency(stockValue),
+      sub: `${products.length} products`,
+      icon: Package,
+    },
+    {
+      label: "Outstanding credit",
+      value: currency(outstanding),
+      sub: "unpaid balances",
+      icon: Wallet,
+    },
+    {
+      label: "Profit today",
+      value: currency(dashboard?.profit_today ?? 0),
+      sub: "gross margin",
+      icon: DollarSign,
+    },
+    {
+      label: "Profit 7 days",
+      value: currency(dashboard?.profit_7d ?? 0),
+      sub: "rolling week",
+      icon: DollarSign,
+    },
+    {
+      label: "Profit 30 days",
+      value: currency(dashboard?.profit_30d ?? 0),
+      sub: "rolling month",
+      icon: DollarSign,
+    },
   ];
 
   return (
@@ -98,7 +128,9 @@ function DashboardPage() {
                   <tr key={inv.id} className="border-b border-border last:border-0">
                     <td className="px-5 py-3 font-medium">{inv.invoice_no}</td>
                     <td className="px-2 py-3 text-muted-foreground">{inv.customer_name}</td>
-                    <td className="px-2 py-3 text-muted-foreground">{formatDate(inv.created_at)}</td>
+                    <td className="px-2 py-3 text-muted-foreground">
+                      {formatDate(inv.created_at)}
+                    </td>
                     <td className="px-5 py-3 text-right">{currency(inv.total)}</td>
                   </tr>
                 ))}
@@ -113,7 +145,9 @@ function DashboardPage() {
             <AlertTriangle className="size-4 text-destructive" />
           </div>
           {lowStock.length === 0 ? (
-            <p className="p-5 text-sm text-muted-foreground">All products are above their threshold.</p>
+            <p className="p-5 text-sm text-muted-foreground">
+              All products are above their threshold.
+            </p>
           ) : (
             <ul className="divide-y divide-border text-sm">
               {lowStock.map((p: Product) => (

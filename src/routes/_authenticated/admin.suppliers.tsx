@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
 
@@ -179,6 +179,24 @@ function SuppliersPage() {
 
   const purchaseSubtotal = purchaseForm.items.reduce((sum, i) => sum + i.line_total, 0);
   const purchaseTotal = purchaseSubtotal - purchaseForm.discount;
+  // Every past due for this supplier rolls onto this purchase, so the real
+  // bill is new goods + whatever the supplier already owes.
+  const carriedBalance = purchaseForm.supplier_id
+    ? Math.max(
+        0,
+        Number(suppliers.find((s) => s.id === purchaseForm.supplier_id)?.outstanding_balance ?? 0),
+      )
+    : 0;
+  const grandTotal = Math.max(0, purchaseTotal + carriedBalance);
+
+  // Cash/bank pays the grand total; credit pays 0. Editing Amount Paid by
+  // hand pins the value so a partial payment survives later item edits.
+  const [amountPaidTouched, setAmountPaidTouched] = useState(false);
+  useEffect(() => {
+    if (amountPaidTouched) return;
+    const next = purchaseForm.payment_method === "credit" ? "0" : String(grandTotal);
+    setPurchaseForm((f) => (f.amount_paid === next ? f : { ...f, amount_paid: next }));
+  }, [grandTotal, purchaseForm.payment_method, amountPaidTouched]);
 
   function addItem() {
     setPurchaseForm((f) => ({
@@ -226,14 +244,14 @@ function SuppliersPage() {
       if (purchaseTotal < 0) throw new Error("Discount cannot exceed subtotal");
       const amountPaid = Number(purchaseForm.amount_paid) || 0;
       if (amountPaid < 0) throw new Error("Amount paid cannot be negative");
-      if (amountPaid > purchaseTotal) throw new Error("Amount paid cannot exceed total");
+      if (amountPaid > grandTotal) throw new Error("Amount paid cannot exceed total");
 
       await createPurchase.mutateAsync({
         supplier_id: purchaseForm.supplier_id,
         supplier_name: purchaseForm.supplier_name,
         subtotal: purchaseSubtotal,
         discount: purchaseForm.discount,
-        total: purchaseTotal,
+        total: grandTotal,
         amount_paid: amountPaid,
         payment_method: purchaseForm.payment_method,
         notes: purchaseForm.notes.trim() || undefined,
@@ -260,6 +278,7 @@ function SuppliersPage() {
       notes: "",
       items: [],
     });
+    setAmountPaidTouched(false);
     setPurchaseDialogOpen(false);
   }
 
@@ -320,6 +339,7 @@ function SuppliersPage() {
                     onChange={(e) => {
                       const id = e.target.value;
                       const s = suppliers.find((s) => s.id === id);
+                      setAmountPaidTouched(false);
                       setPurchaseForm((f) => ({
                         ...f,
                         supplier_id: id,
@@ -430,9 +450,15 @@ function SuppliersPage() {
                         }
                       />
                     </div>
+                    {carriedBalance > 0 && (
+                      <div className="flex justify-between text-sm text-muted-foreground">
+                        <span>Previous balance carried</span>
+                        <span>{currency(carriedBalance)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between border-t border-border pt-2 text-lg font-semibold">
                       <span>Total</span>
-                      <span>{currency(purchaseTotal)}</span>
+                      <span>{currency(grandTotal)}</span>
                     </div>
                   </div>
                 </div>
@@ -445,10 +471,14 @@ function SuppliersPage() {
                       min={0}
                       placeholder="0"
                       value={purchaseForm.amount_paid}
-                      onChange={(e) =>
-                        setPurchaseForm((f) => ({ ...f, amount_paid: e.target.value }))
-                      }
+                      onChange={(e) => {
+                        setAmountPaidTouched(true);
+                        setPurchaseForm((f) => ({ ...f, amount_paid: e.target.value }));
+                      }}
                     />
+                    {Number(purchaseForm.amount_paid) > grandTotal && grandTotal > 0 && (
+                      <p className="text-xs text-destructive">Capped at total</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label>Payment Method</Label>
@@ -457,7 +487,10 @@ function SuppliersPage() {
                         <button
                           key={m}
                           type="button"
-                          onClick={() => setPurchaseForm((f) => ({ ...f, payment_method: m }))}
+                          onClick={() => {
+                            setAmountPaidTouched(false);
+                            setPurchaseForm((f) => ({ ...f, payment_method: m }));
+                          }}
                           className={`rounded-md border px-3 py-2 text-sm capitalize ${
                             purchaseForm.payment_method === m
                               ? "border-foreground bg-foreground text-background"
@@ -476,9 +509,7 @@ function SuppliersPage() {
                   <Label>Notes</Label>
                   <Textarea
                     value={purchaseForm.notes}
-                    onChange={(e) =>
-                      setPurchaseForm((f) => ({ ...f, notes: e.target.value }))
-                    }
+                    onChange={(e) => setPurchaseForm((f) => ({ ...f, notes: e.target.value }))}
                     placeholder="Optional notes"
                     rows={2}
                   />
@@ -510,14 +541,15 @@ function SuppliersPage() {
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>
-                  {editingSupplier ? "Edit supplier" : "New supplier"}
-                </DialogTitle>
+                <DialogTitle>{editingSupplier ? "Edit supplier" : "New supplier"}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 {(["name", "phone", "email", "company", "address"] as const).map((key) => (
                   <div key={key} className="space-y-2">
-                    <Label className="capitalize">{key}{key === "name" ? " *" : ""}</Label>
+                    <Label className="capitalize">
+                      {key}
+                      {key === "name" ? " *" : ""}
+                    </Label>
                     <Input {...supplierField(key)} maxLength={200} />
                   </div>
                 ))}
@@ -525,9 +557,7 @@ function SuppliersPage() {
                   <Label>Notes</Label>
                   <Textarea
                     value={supplierForm.notes}
-                    onChange={(e) =>
-                      setSupplierForm((f) => ({ ...f, notes: e.target.value }))
-                    }
+                    onChange={(e) => setSupplierForm((f) => ({ ...f, notes: e.target.value }))}
                     placeholder="Optional notes"
                     rows={2}
                   />
@@ -609,12 +639,11 @@ function SuppliersPage() {
                         {currency(s.outstanding_balance)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openEditSupplier(s)}
-                          >
+                        <div
+                          className="flex items-center justify-end gap-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Button size="sm" variant="outline" onClick={() => openEditSupplier(s)}>
                             Edit
                           </Button>
                           <Button
@@ -641,6 +670,9 @@ function SuppliersPage() {
                                 <li key={p.id} className="flex justify-between">
                                   <span>
                                     {p.purchase_no} · {formatDate(p.created_at)}
+                                    {p.carried_to_purchase_id && (
+                                      <span className="text-emerald-600"> · carried</span>
+                                    )}
                                   </span>
                                   <span>{currency(p.total)}</span>
                                 </li>
@@ -670,6 +702,7 @@ function SuppliersPage() {
                 <th className="px-4 py-3">PO #</th>
                 <th className="px-4 py-3">Supplier</th>
                 <th className="px-4 py-3 text-right">Total</th>
+                <th className="px-4 py-3 text-right">Previous Balance</th>
                 <th className="px-4 py-3 text-right">Paid</th>
                 <th className="px-4 py-3 text-right">Balance</th>
                 <th className="px-4 py-3">Date</th>
@@ -679,38 +712,42 @@ function SuppliersPage() {
             <tbody>
               {loadingPurchases && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-muted-foreground">
+                  <td colSpan={8} className="px-4 py-6 text-muted-foreground">
                     Loading purchases…
                   </td>
                 </tr>
               )}
               {!loadingPurchases && purchases.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-muted-foreground">
+                  <td colSpan={8} className="px-4 py-6 text-muted-foreground">
                     No purchases recorded yet.
                   </td>
                 </tr>
               )}
               {purchases.map((p) => {
                 const balance = Math.max(0, Number(p.total) - Number(p.amount_paid));
+                const carried = !!p.carried_to_purchase_id;
                 return (
                   <tr key={p.id} className="border-b border-border last:border-0">
                     <td className="px-4 py-3 font-medium">{p.purchase_no}</td>
                     <td className="px-4 py-3">{p.supplier_name}</td>
                     <td className="px-4 py-3 text-right">{currency(p.total)}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">
+                      {currency(p.previous_balance)}
+                    </td>
                     <td className="px-4 py-3 text-right">{currency(p.amount_paid)}</td>
-                    <td
-                      className={`px-4 py-3 text-right ${
-                        balance > 0 ? "text-destructive" : ""
-                      }`}
-                    >
-                      {currency(balance)}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {formatDate(p.created_at)}
-                    </td>
                     <td className="px-4 py-3 text-right">
-                      {balance > 0 && (
+                      {carried ? (
+                        <span className="text-xs font-medium text-emerald-600">Carried</span>
+                      ) : (
+                        <span className={balance > 0 ? "text-destructive" : ""}>
+                          {currency(balance)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{formatDate(p.created_at)}</td>
+                    <td className="px-4 py-3 text-right">
+                      {balance > 0 && !carried && (
                         <>
                           {paymentPurchaseId === p.id ? (
                             <div className="flex items-end justify-end gap-2">
@@ -728,9 +765,7 @@ function SuppliersPage() {
                                 disabled={recordPayment.isPending}
                                 onClick={() => {
                                   const amt =
-                                    Number(paymentAmount) > 0
-                                      ? Number(paymentAmount)
-                                      : balance;
+                                    Number(paymentAmount) > 0 ? Number(paymentAmount) : balance;
                                   recordPayment.mutate({ purchase: p, amount: amt });
                                 }}
                               >

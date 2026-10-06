@@ -18,7 +18,7 @@ pub enum AppError {
     #[error("Authorization failed: {0}")]
     Forbidden(String),
 
-    #[error("User already exists: {0}")]
+    #[error("Conflict: {0}")]
     Conflict(String),
 
     #[error("Invalid credentials")]

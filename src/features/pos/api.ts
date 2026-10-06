@@ -29,6 +29,7 @@ export type Customer = {
   address: string | null;
   outstanding_balance: number;
   created_at: string;
+  invoice_count?: number;
 };
 
 export function useProductsForPOS(category?: string) {

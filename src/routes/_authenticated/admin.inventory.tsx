@@ -189,7 +189,9 @@ function InventoryPage() {
         const name = pick(row, "Name", "product") || sku;
         if (!name) continue;
         const rawCategory = pick(row, "Category").toLowerCase();
-        const category = (valid.has(rawCategory as Category) ? rawCategory : "sanitary") as Category;
+        const category = (
+          valid.has(rawCategory as Category) ? rawCategory : "sanitary"
+        ) as Category;
         const company = pick(row, "Company");
         const payload = {
           name,

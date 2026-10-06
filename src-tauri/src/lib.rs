@@ -5,12 +5,16 @@ pub mod config;
 pub mod database;
 pub mod error;
 pub mod events;
+pub mod license;
 pub mod repositories;
 pub mod services;
 pub mod autostart;
 
 pub use error::{AppError, Result};
 pub use database::DbPool;
+
+#[cfg(test)]
+mod test_support;
 
 use tauri::Manager;
 
@@ -33,6 +37,17 @@ pub fn run() {
             })?;
             app.manage(crate::database::Db::new(pool.clone()));
 
+            // License lock check — read lock state from DB on startup
+            let license_state = crate::license::LicenseState::new();
+            let is_locked = tauri::async_runtime::block_on(
+                crate::license::is_system_locked(&pool)
+            );
+            tauri::async_runtime::block_on(license_state.set_locked(is_locked));
+            app.manage(license_state);
+            if is_locked {
+                log::warn!("System is LOCKED");
+            }
+
             // Retention: purge fully-settled sales older than 12 months so the
             // store stays light over years. Runs in the background; snapshots
             // the DB first and only notifies the UI when rows were removed.
@@ -43,7 +58,7 @@ pub fn run() {
 
             // Reconciliation: recompute all customer outstanding_balance from
             // the actual invoice ledger so stale values get corrected.
-            tauri::async_runtime::spawn(crate::services::reconciliation::run_on_startup(
+            tauri::async_runtime::spawn(crate::services::reconciliation::run_and_notify(
                 app.handle().clone(),
                 pool,
             ));
@@ -132,6 +147,11 @@ pub fn run() {
             
             // Reconciliation commands
             commands::reconciliation::reconcile_balances,
+            
+            // License/lock commands
+            commands::license::check_system_lock,
+            commands::license::set_system_lock,
+            commands::license::unlock_with_password,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

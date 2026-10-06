@@ -3,8 +3,8 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 export default defineConfig({
   tanstackStart: {
     // Disable SSR - run as pure SPA
-    server: { 
-      handler: () => new Response(null, { status: 404 })
+    server: {
+      handler: () => new Response(null, { status: 404 }),
     },
   },
   vite: {

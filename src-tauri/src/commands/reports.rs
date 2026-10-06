@@ -1,15 +1,16 @@
 // src-tauri/src/commands/reports.rs
-use tauri::{State, AppHandle};
-use crate::auth::middleware::require_cashier_or_admin;
-use crate::DbPool;
+use tauri::State;
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use chrono::TimeZone;
 
 #[derive(Serialize)]
 pub struct DashboardStats {
     pub total_sales_today: i64,
     pub total_invoices_today: i64,
+    pub sales_7d: i64,
+    pub invoices_7d: i64,
     pub low_stock_count: i64,
     pub outstanding_balance: i64,
     pub profit_today: i64,
@@ -51,36 +52,70 @@ pub struct SalesReportInput {
 #[tauri::command]
 pub async fn get_dashboard(db: State<'_, crate::database::Db>, _auth: Option<String>) -> Result<DashboardStats, AppError> {
     let pool = db.pool().await;
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    
+
+    let now_local = chrono::Local::now();
+    let today_start_naive = now_local.date_naive().and_hms_opt(0, 0, 0).unwrap();
+    let today_start_dt = now_local.timezone()
+        .from_local_datetime(&today_start_naive)
+        .single()
+        .unwrap_or(now_local);
+    let today_start_utc = today_start_dt.with_timezone(&chrono::Utc);
+    let today_end_utc = today_start_utc + chrono::Duration::days(1);
+    let start_7d_utc = today_start_utc - chrono::Duration::days(6);
+    let start_30d_utc = today_start_utc - chrono::Duration::days(29);
+
+    let today_start = today_start_utc.to_rfc3339();
+    let today_end = today_end_utc.to_rfc3339();
+    let start_7d = start_7d_utc.to_rfc3339();
+    let start_30d = start_30d_utc.to_rfc3339();
+
+    // Net revenue: subtract anything this invoice carried over from a previous
+    // one — that money was already counted when it first changed hands.
     let total_sales_today: i64 = sqlx::query_scalar!(
-        "SELECT COALESCE(SUM(total), 0) FROM invoices WHERE date(created_at) = ?",
-        today
+        "SELECT COALESCE(SUM(total - previous_balance), 0) FROM invoices WHERE created_at >= ? AND created_at < ?",
+        today_start,
+        today_end
     )
     .fetch_one(&pool)
     .await?;
-    
+
     let total_invoices_today: i64 = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM invoices WHERE date(created_at) = ?",
-        today
+        "SELECT COUNT(*) FROM invoices WHERE created_at >= ? AND created_at < ?",
+        today_start,
+        today_end
     )
     .fetch_one(&pool)
     .await?;
-    
+
+    let sales_7d: i64 = sqlx::query_scalar!(
+        "SELECT COALESCE(SUM(total - previous_balance), 0) FROM invoices WHERE created_at >= ? AND created_at < ?",
+        start_7d,
+        today_end
+    )
+    .fetch_one(&pool)
+    .await?;
+
+    let invoices_7d: i64 = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM invoices WHERE created_at >= ? AND created_at < ?",
+        start_7d,
+        today_end
+    )
+    .fetch_one(&pool)
+    .await?;
+
     let low_stock_count: i64 = sqlx::query_scalar!(
         "SELECT COUNT(*) FROM products WHERE stock_qty <= low_stock_threshold AND is_published = 1"
     )
     .fetch_one(&pool)
     .await?;
-    
+
     let outstanding_balance: i64 = sqlx::query_scalar!(
         "SELECT COALESCE(SUM(outstanding_balance), 0) FROM customers WHERE outstanding_balance > 0"
     )
     .fetch_one(&pool)
     .await?;
 
-    let profit_today: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(
+    let profit_sql = "SELECT COALESCE(SUM(
            CASE WHEN i.subtotal = 0 THEN ii.line_total - ii.purchase_price * ii.quantity
            ELSE ii.line_total * (i.subtotal - i.discount) / i.subtotal - ii.purchase_price * ii.quantity END
          ), 0)
@@ -94,62 +129,40 @@ pub async fn get_dashboard(db: State<'_, crate::database::Db>, _auth: Option<Str
              AND (ii2.product_id = r.product_id
                   OR (ii2.product_id IS NULL AND ii2.product_name = r.product_name))
            LEFT JOIN invoices i2 ON i2.id = r.invoice_id
-           WHERE date(r.created_at) = ?
+           WHERE r.created_at >= ? AND r.created_at < ?
          ), 0)
-         FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE date(i.created_at) = ?"
-    )
-    .bind(&today)
-    .bind(&today)
-    .fetch_one(&pool)
-    .await?;
+         FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
+         WHERE i.created_at >= ? AND i.created_at < ?";
 
-    let profit_7d: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(
-           CASE WHEN i.subtotal = 0 THEN ii.line_total - ii.purchase_price * ii.quantity
-           ELSE ii.line_total * (i.subtotal - i.discount) / i.subtotal - ii.purchase_price * ii.quantity END
-         ), 0)
-         - COALESCE((
-           SELECT SUM(
-             CASE WHEN i2.subtotal = 0 THEN r.line_total - COALESCE(ii2.purchase_price, 0) * r.quantity
-             ELSE r.line_total * (i2.subtotal - i2.discount) / i2.subtotal - COALESCE(ii2.purchase_price, 0) * r.quantity END
-           )
-           FROM returns r
-           LEFT JOIN invoice_items ii2 ON ii2.invoice_id = r.invoice_id
-             AND (ii2.product_id = r.product_id
-                  OR (ii2.product_id IS NULL AND ii2.product_name = r.product_name))
-           LEFT JOIN invoices i2 ON i2.id = r.invoice_id
-           WHERE r.created_at >= datetime('now', '-7 days')
-         ), 0)
-         FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.created_at >= datetime('now', '-7 days')"
-    )
-    .fetch_one(&pool)
-    .await?;
+    let profit_today: i64 = sqlx::query_scalar(profit_sql)
+        .bind(&today_start)
+        .bind(&today_end)
+        .bind(&today_start)
+        .bind(&today_end)
+        .fetch_one(&pool)
+        .await?;
 
-    let profit_30d: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(
-           CASE WHEN i.subtotal = 0 THEN ii.line_total - ii.purchase_price * ii.quantity
-           ELSE ii.line_total * (i.subtotal - i.discount) / i.subtotal - ii.purchase_price * ii.quantity END
-         ), 0)
-         - COALESCE((
-           SELECT SUM(
-             CASE WHEN i2.subtotal = 0 THEN r.line_total - COALESCE(ii2.purchase_price, 0) * r.quantity
-             ELSE r.line_total * (i2.subtotal - i2.discount) / i2.subtotal - COALESCE(ii2.purchase_price, 0) * r.quantity END
-           )
-           FROM returns r
-           LEFT JOIN invoice_items ii2 ON ii2.invoice_id = r.invoice_id
-             AND (ii2.product_id = r.product_id
-                  OR (ii2.product_id IS NULL AND ii2.product_name = r.product_name))
-           LEFT JOIN invoices i2 ON i2.id = r.invoice_id
-           WHERE r.created_at >= datetime('now', '-30 days')
-         ), 0)
-         FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE i.created_at >= datetime('now', '-30 days')"
-    )
-    .fetch_one(&pool)
-    .await?;
+    let profit_7d: i64 = sqlx::query_scalar(profit_sql)
+        .bind(&start_7d)
+        .bind(&today_end)
+        .bind(&start_7d)
+        .bind(&today_end)
+        .fetch_one(&pool)
+        .await?;
+
+    let profit_30d: i64 = sqlx::query_scalar(profit_sql)
+        .bind(&start_30d)
+        .bind(&today_end)
+        .bind(&start_30d)
+        .bind(&today_end)
+        .fetch_one(&pool)
+        .await?;
 
     Ok(DashboardStats {
         total_sales_today,
         total_invoices_today,
+        sales_7d,
+        invoices_7d,
         low_stock_count,
         outstanding_balance,
         profit_today,
@@ -172,11 +185,11 @@ pub async fn get_sales_report(db: State<'_, crate::database::Db>, input: SalesRe
         r#"
         SELECT
             date(i.created_at) as date,
-            SUM(i.total) as total_sales,
+            SUM(i.total - i.previous_balance) as total_sales,
             COUNT(DISTINCT i.id) as invoice_count,
-            SUM(CASE WHEN i.payment_method = 'cash' THEN i.total ELSE 0 END) as cash_sales,
-            SUM(CASE WHEN i.payment_method = 'credit' THEN i.total ELSE 0 END) as credit_sales,
-            SUM(CASE WHEN i.payment_method = 'bank' THEN i.total ELSE 0 END) as bank_sales,
+            SUM(CASE WHEN i.payment_method = 'cash' THEN i.total - i.previous_balance ELSE 0 END) as cash_sales,
+            SUM(CASE WHEN i.payment_method = 'credit' THEN i.total - i.previous_balance ELSE 0 END) as credit_sales,
+            SUM(CASE WHEN i.payment_method = 'bank' THEN i.total - i.previous_balance ELSE 0 END) as bank_sales,
             COALESCE(SUM(
               CASE WHEN i.subtotal = 0 THEN ii.line_total - ii.purchase_price * ii.quantity
               ELSE ii.line_total * (i.subtotal - i.discount) / i.subtotal - ii.purchase_price * ii.quantity END

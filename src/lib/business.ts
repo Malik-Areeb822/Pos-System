@@ -12,6 +12,11 @@ export const BUSINESS = {
       address: "Murree Road, Kalapul, Opp Noor Masjid, Atd",
     },
   ],
+  bank: {
+    name: "Faysal Bank",
+    account: "3419301000005678",
+    title: "Hamza Zahid",
+  },
   phone: "0312-1584181 | 0312-9906468",
   email: "sales@moonpipe.com.pk",
   hours: "Mon – Sat · 8:00 am – 7:00 pm",

@@ -18,31 +18,45 @@ pub const PRINT_WIDTH_PX: usize = 576;
 pub const ROW_BYTES: usize = PRINT_WIDTH_PX / 8;
 /// Side padding (~3 mm).
 const MARGIN_X: i32 = 24;
-/// Blank rows above the first content and below the last content (~6 mm) —
-/// kept equal so the receipt has symmetric top/bottom whitespace.
-const MARGIN_Y_ROWS: usize = 48;
+/// Blank rows above the first content (~2 mm) — kept small so the receipt
+/// wastes as little paper as possible at the top.
+const MARGIN_TOP_ROWS: usize = 16;
+/// Blank rows below the last content before the cutter feeds (~6 mm).
+const MARGIN_BOTTOM_ROWS: usize = 48;
 /// Raster data is sent in horizontal bands so even small-printer RAM copes.
 const MAX_ROWS_PER_BAND: usize = 800;
 
 const ESC: u8 = 0x1B;
 const GS: u8 = 0x1D;
 
-/// 14×14 monochrome WhatsApp icon — phone handset inside a speech bubble.
-const WHATSAPP_ICON: [[u8; 14]; 14] = [
-    [0,0,0,0,1,1,1,1,1,1,0,0,0,0],
-    [0,0,0,1,1,1,1,1,1,1,1,0,0,0],
-    [0,0,1,1,0,0,0,0,0,0,1,1,0,0],
-    [0,1,1,0,0,1,1,0,1,1,0,1,1,0],
-    [0,1,0,0,1,1,1,1,1,0,0,0,1,0],
-    [1,1,0,1,1,0,0,0,1,1,0,0,1,1],
-    [1,1,0,1,0,0,0,0,0,1,0,0,1,1],
-    [1,1,0,1,0,0,0,0,0,1,0,0,1,1],
-    [1,1,0,1,1,0,0,0,1,1,0,0,1,1],
-    [0,1,0,0,1,1,1,1,1,0,0,1,1,0],
-    [0,1,1,0,0,1,1,0,1,1,0,1,1,0],
-    [0,0,1,1,0,0,0,0,0,0,1,1,0,0],
-    [0,0,0,1,1,1,1,1,1,1,1,0,0,0],
-    [0,0,0,0,1,1,1,1,1,1,0,0,0,0],
+/// 24×24 monochrome WhatsApp logo — speech bubble with tail, phone handset
+/// inside. Derived from the official Simple Icons WhatsApp glyph (24×24
+/// viewBox), thresholded to 1-bit for the raster printer.
+const WHATSAPP_ICON: [[u8; 24]; 24] = [
+    [0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,1,0,0,0,0,1,1,1,1,1,0,0,0,0,0],
+    [0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0],
+    [0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0],
+    [0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0],
+    [0,1,1,1,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0],
+    [0,1,1,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0],
+    [0,1,1,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1],
+    [1,1,1,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1],
+    [1,1,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1],
+    [1,1,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1],
+    [1,1,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1],
+    [1,1,0,0,0,0,0,0,1,1,1,0,0,0,0,1,0,0,0,0,0,0,1,1],
+    [1,1,1,0,0,0,0,0,0,1,1,1,1,0,1,1,1,1,0,0,0,1,1,1],
+    [0,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,1,1,0],
+    [0,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,1,1,0],
+    [0,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,1,1,1,0],
+    [0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0],
+    [0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0],
+    [0,1,1,0,0,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0],
+    [0,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,0,0,0,0,0],
+    [1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0],
+    [1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0],
 ];
 
 struct ReceiptFonts {
@@ -226,7 +240,7 @@ fn draw_centered(canvas: &mut Canvas, style: &TextStyle, text: &str) {
 }
 
 /// Draw a monochrome bitmap icon at (x, y) on the canvas.
-fn draw_bitmap_icon(canvas: &mut Canvas, icon: &[[u8; 14]], x: i32, y: i32) {
+fn draw_bitmap_icon(canvas: &mut Canvas, icon: &[[u8; 24]], x: i32, y: i32) {
     for (dy, row) in icon.iter().enumerate() {
         for (dx, &bit) in row.iter().enumerate() {
             if bit == 1 {
@@ -242,7 +256,7 @@ fn draw_centered_with_icons(
     canvas: &mut Canvas,
     style: &TextStyle,
     phone_str: &str,
-    icon: &[[u8; 14]],
+    icon: &[[u8; 24]],
 ) {
     let nums: Vec<&str> = phone_str.split('|').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
     if nums.is_empty() {
@@ -328,6 +342,92 @@ fn draw_two_col(canvas: &mut Canvas, fonts: &ReceiptFonts, left: &str, right: &s
 }
 
 // ---------------------------------------------------------------------------
+// Item grid — 4 columns: name / qty / rate / total
+// ---------------------------------------------------------------------------
+
+/// Right edge of the QTY column (x where its text ends).
+const GRID_QTY_RIGHT: f32 = 364.0;
+/// Right edge of the RATE column.
+const GRID_RATE_RIGHT: f32 = 454.0;
+/// Right edge of the TOTAL column (= printable right edge).
+const GRID_TOTAL_RIGHT: f32 = (PRINT_WIDTH_PX - MARGIN_X as usize) as f32;
+/// Left edge + max width of the NAME column (wraps inside this budget).
+const GRID_NAME_X: f32 = MARGIN_X as f32;
+const GRID_NAME_MAX_W: f32 = 250.0;
+
+/// Right-align `text` so it ends exactly at `right_edge`.
+fn draw_right(canvas: &mut Canvas, font: &FontVec, size: f32, right_edge: f32, baseline_y: f32, text: &str) {
+    let w = measure(font, size, text);
+    draw_string(canvas, font, size, right_edge - w, baseline_y, text);
+}
+
+/// Bold column header row (ITEM / QTY / RATE / TOTAL) in all caps.
+fn draw_grid_head(canvas: &mut Canvas, fonts: &ReceiptFonts, size: f32) {
+    let style = TextStyle { font: &fonts.karla_bold, size, leading: 8.0 };
+    let top = canvas.rows.len();
+    canvas.push_blank(style.line_advance().ceil() as usize);
+    let base_y = top as f32 + style.ascent();
+    draw_string(canvas, &fonts.karla_bold, size, GRID_NAME_X, base_y, "ITEM");
+    draw_right(canvas, &fonts.karla_bold, size, GRID_QTY_RIGHT, base_y, "QTY");
+    draw_right(canvas, &fonts.karla_bold, size, GRID_RATE_RIGHT, base_y, "RATE");
+    draw_right(canvas, &fonts.karla_bold, size, GRID_TOTAL_RIGHT, base_y, "TOTAL");
+    canvas.push_blank(4);
+    canvas.dashed_rule();
+    canvas.push_blank(8);
+}
+
+/// One grid row: the name wraps inside its column; qty / rate / total sit
+/// right-aligned on the first baseline so the columns stay aligned. The
+/// optional area line is a small bold note tucked under the name.
+fn draw_grid_row(
+    canvas: &mut Canvas,
+    fonts: &ReceiptFonts,
+    name: &str,
+    qty: &str,
+    rate: &str,
+    total: &str,
+    area: Option<f64>,
+    size: f32,
+) {
+    let lines = wrap(&fonts.karla_regular, size, name, GRID_NAME_MAX_W);
+    let style = TextStyle { font: &fonts.karla_regular, size, leading: 4.0 };
+    let advance = style.line_advance().ceil() as usize;
+
+    let area_size = 22.0;
+    let area_style = TextStyle { font: &fonts.karla_bold, size: area_size, leading: 4.0 };
+    let area_advance = area_style.line_advance().ceil() as usize;
+    let area_lines = area
+        .filter(|a| *a > 0.0)
+        .map(|a| format!("Area: {:.3} sqm", a))
+        .map(|text| wrap(&fonts.karla_bold, area_size, &text, GRID_NAME_MAX_W))
+        .unwrap_or_default();
+
+    let top = canvas.rows.len();
+    canvas.push_blank(advance * lines.len() + area_advance * area_lines.len());
+
+    // Name lines.
+    for (i, line) in lines.iter().enumerate() {
+        let y = top as f32 + i as f32 * advance as f32 + style.ascent();
+        draw_string(canvas, &fonts.karla_regular, size, GRID_NAME_X, y, line);
+    }
+    // Area note under the name (bold, smaller).
+    for (i, line) in area_lines.iter().enumerate() {
+        let y = top as f32 + lines.len() as f32 * advance as f32
+            + i as f32 * area_advance as f32
+            + area_style.ascent();
+        draw_string(canvas, &fonts.karla_bold, area_size, GRID_NAME_X, y, line);
+    }
+
+    // Numeric columns on the first baseline — total bold for scannability.
+    let base_y = top as f32 + style.ascent();
+    draw_right(canvas, &fonts.karla_regular, size, GRID_QTY_RIGHT, base_y, qty);
+    draw_right(canvas, &fonts.karla_regular, size, GRID_RATE_RIGHT, base_y, rate);
+    draw_right(canvas, &fonts.karla_bold, size, GRID_TOTAL_RIGHT, base_y, total);
+
+    canvas.push_blank(6);
+}
+
+// ---------------------------------------------------------------------------
 // Receipt composition
 // ---------------------------------------------------------------------------
 
@@ -356,18 +456,33 @@ pub fn render_receipt(
 ) -> Option<Vec<u8>> {
     let fonts = FONTS.as_ref()?;
     let mut c = Canvas::new();
-    c.push_blank(MARGIN_Y_ROWS);
+    c.push_blank(MARGIN_TOP_ROWS);
 
     // --- Header -----------------------------------------------------------
     let banner = TextStyle { font: &fonts.cormorant_bold, size: 72.0, leading: 14.0 };
     draw_centered(&mut c, &banner, business.name.trim());
 
-    let small = TextStyle { font: &fonts.karla_regular, size: 26.0, leading: 12.0 };
+    // Header block (branches, bank, phones) prints bold for attention.
+    let small_bold = TextStyle { font: &fonts.karla_bold, size: 26.0, leading: 12.0 };
+    // Branches are left-aligned at the margin so both lines (and any wrapped
+    // continuation) share the same left edge — centered lines made the shorter
+    // Branch 2 line look indented under Branch 1.
     for branch in &business.branches {
         let line = format!("{}: {}", branch.label, branch.address);
-        draw_centered(&mut c, &small, line.trim());
+        draw_left(&mut c, &small_bold, line.trim(), MARGIN_X as f32);
     }
-    draw_centered_with_icons(&mut c, &small, business.phone.trim(), &WHATSAPP_ICON);
+    // Bank details — two centered lines under the branches, above the phones.
+    draw_centered(&mut c, &small_bold, business.bank.name.trim());
+    draw_centered(
+        &mut c,
+        &small_bold,
+        &format!(
+            "A/C {} \u{00B7} {}",
+            business.bank.account.trim(),
+            business.bank.title.trim()
+        ),
+    );
+    draw_centered_with_icons(&mut c, &small_bold, business.phone.trim(), &WHATSAPP_ICON);
 
     c.push_blank(14);
     c.dashed_rule();
@@ -384,40 +499,34 @@ pub fn render_receipt(
     c.dashed_rule();
     c.push_blank(12);
 
-    // --- Items ------------------------------------------------------------
+    // --- Items: 4-column grid (name / qty / rate / total) ----------------
+    // Whole rupees with no per-row PKR prefix (client: "people know it's in
+    // PKR"); the totals section below still prints PKR.
     let body_size = 29.0;
+    draw_grid_head(&mut c, fonts, 24.0);
     for item in items {
-        let head = format!("{} {} \u{00D7} {}", item.quantity, item.unit, item.product_name);
-        draw_two_col(&mut c, fonts, &head, &price(item.line_total), false, body_size);
-        draw_left(
+        draw_grid_row(
             &mut c,
-            &TextStyle { font: &fonts.karla_regular, size: 25.0, leading: 8.0 },
-            &format!("@ {} / {}", price(item.unit_price), item.unit),
-            56.0,
+            fonts,
+            &item.product_name,
+            &format!("{} {}", item.quantity, item.unit),
+            &item.unit_price.to_string(),
+            &item.line_total.to_string(),
+            item.total_area,
+            26.0,
         );
-        if let Some(total_area) = item.total_area {
-            if total_area > 0.0 {
-                draw_left(
-                    &mut c,
-                    &TextStyle { font: &fonts.karla_bold, size: 25.0, leading: 8.0 },
-                    &format!("Area: {:.3} sqm", total_area),
-                    56.0,
-                );
-            }
-        }
-        c.push_blank(6);
     }
-    c.push_blank(6);
+    c.push_blank(4);
     c.dashed_rule();
     c.push_blank(12);
 
     // --- Totals -----------------------------------------------------------
-    draw_two_col(&mut c, fonts, "Subtotal", &price(inv.subtotal), false, body_size);
+    draw_two_col(&mut c, fonts, "Subtotal", &price(inv.subtotal), true, body_size);
     if inv.discount > 0 {
-        draw_two_col(&mut c, fonts, "Discount", &format!("-{}", price(inv.discount)), false, body_size);
+        draw_two_col(&mut c, fonts, "Discount", &format!("-{}", price(inv.discount)), true, body_size);
     }
     if inv.previous_balance > 0 {
-        draw_two_col(&mut c, fonts, "Previous balance", &price(inv.previous_balance), false, body_size);
+        draw_two_col(&mut c, fonts, "Previous balance", &price(inv.previous_balance), true, body_size);
     }
     c.push_blank(8);
     c.solid_rule();
@@ -427,11 +536,11 @@ pub fn render_receipt(
     c.solid_rule();
     c.push_blank(12);
 
-    draw_two_col(&mut c, fonts, "Paid", &price(inv.amount_paid), false, body_size);
+    draw_two_col(&mut c, fonts, "Paid", &price(inv.amount_paid), true, body_size);
     if inv.amount_paid < inv.total {
         draw_two_col(&mut c, fonts, "Balance due", &price(inv.total - inv.amount_paid), true, body_size);
     }
-    draw_two_col(&mut c, fonts, "Method", &inv.payment_method, false, body_size);
+    draw_two_col(&mut c, fonts, "Method", &inv.payment_method, true, body_size);
 
     if let Some(notes) = inv.notes.as_deref().filter(|n| !n.trim().is_empty()) {
         c.push_blank(12);
@@ -445,15 +554,15 @@ pub fn render_receipt(
         );
     }
 
-    // --- Footer -----------------------------------------------------------
+    // --- Footer (bold for attention) --------------------------------------
     c.push_blank(20);
-    draw_centered(&mut c, &TextStyle { font: &fonts.karla_regular, size: 28.0, leading: 12.0 }, "Thank you!");
-    draw_centered(&mut c, &small, "Developed by AZ Solutions");
-    let footer_phone = TextStyle { font: &fonts.karla_regular, size: 22.0, leading: 10.0 };
-    draw_centered_with_icons(&mut c, &footer_phone, "03311203090", &WHATSAPP_ICON);
+    draw_centered(&mut c, &TextStyle { font: &fonts.karla_bold, size: 28.0, leading: 12.0 }, "Thank you!");
+    draw_centered(&mut c, &TextStyle { font: &fonts.karla_bold, size: 26.0, leading: 12.0 }, "Developed by AZ Solutions");
+    let footer_phone = TextStyle { font: &fonts.karla_bold, size: 22.0, leading: 10.0 };
+    draw_centered_with_icons(&mut c, &footer_phone, "03311203090 | 03298698926", &WHATSAPP_ICON);
 
-    // Symmetric bottom margin (mirrors MARGIN_Y_ROWS at the top).
-    c.push_blank(MARGIN_Y_ROWS);
+    // Bottom margin before the cutter feed (top stays small to save paper).
+    c.push_blank(MARGIN_BOTTOM_ROWS);
 
     Some(encode_raster_stream(&c))
 }
@@ -521,14 +630,15 @@ mod tests {
 
     #[test]
     fn raster_stream_header_is_valid() {
+        let rows = MARGIN_TOP_ROWS + MARGIN_BOTTOM_ROWS;
         let mut c = Canvas::new();
-        c.push_blank(MARGIN_Y_ROWS * 2);
+        c.push_blank(rows);
         let stream = encode_raster_stream(&c);
         assert_eq!(&stream[0..2], &[ESC, b'@']);
         assert_eq!(&stream[2..6], &[GS, b'v', b'0', 0]);
         assert_eq!(&stream[6..8], &(ROW_BYTES as u16).to_le_bytes());
-        assert_eq!(&stream[8..10], &((MARGIN_Y_ROWS * 2) as u16).to_le_bytes());
-        let expected_len = 2 + 8 + ROW_BYTES * (MARGIN_Y_ROWS * 2) + 3 + 3;
+        assert_eq!(&stream[8..10], &(rows as u16).to_le_bytes());
+        let expected_len = 2 + 8 + ROW_BYTES * rows + 3 + 3;
         assert_eq!(stream.len(), expected_len);
     }
 
@@ -588,5 +698,46 @@ mod tests {
         assert_eq!(c.rows[0][0], 0x80);
         c.set_px(7, 0);
         assert_eq!(c.rows[0][0], 0x81);
+    }
+
+    /// TEMPORARY: dump the rendered receipt as a P1 PBM for visual check.
+    #[test]
+    #[ignore]
+    fn dump_receipt_preview_pbm() {
+        use crate::services::print::ReceiptBusiness;
+        let (inv, items) = sample_invoice();
+        let stream = render_receipt(&inv, &items, &ReceiptBusiness::default()).expect("render ok");
+
+        // Decode the GS v 0 band stream back into full-page rows.
+        let mut rows: Vec<&[u8]> = Vec::new();
+        let mut pos = 2; // ESC @
+        while pos + 8 <= stream.len() && stream[pos..pos + 4] == [GS, b'v', b'0', 0] {
+            let w = u16::from_le_bytes([stream[pos + 4], stream[pos + 5]]) as usize;
+            let h = u16::from_le_bytes([stream[pos + 6], stream[pos + 7]]) as usize;
+            pos += 8;
+            for r in 0..h {
+                rows.push(&stream[pos + r * w..pos + (r + 1) * w]);
+            }
+            pos += w * h;
+        }
+
+        let dir = std::env::temp_dir().join("opencode");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut out = format!("P1\n{} {}\n", PRINT_WIDTH_PX, rows.len());
+        for (i, row) in rows.iter().enumerate() {
+            if i > 0 {
+                out.push('\n');
+            }
+            for px in 0..PRINT_WIDTH_PX {
+                let on = row[px / 8] & (0x80u8 >> (px % 8)) != 0;
+                out.push_str(if on { "1" } else { "0" });
+                if px + 1 < PRINT_WIDTH_PX {
+                    out.push(' ');
+                }
+            }
+        }
+        let path = dir.join("receipt_preview.pbm");
+        std::fs::write(&path, out).unwrap();
+        eprintln!("wrote {}", path.display());
     }
 }

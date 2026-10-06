@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { Download, CalendarRange } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
@@ -8,9 +8,8 @@ import { AdminShell } from "@/components/admin/AdminShell";
 import { AdminOnly } from "@/components/admin/AdminOnly";
 import { Button } from "@/components/ui/button";
 import { currency } from "@/features/inventory/api";
-import { useInvoices } from "@/features/invoices/api";
+import { formatDate, useInvoicesInRange } from "@/features/invoices/api";
 
-import { formatDate } from "@/features/invoices/api";
 import { saveWorkbook, fileStamp } from "@/lib/file-save";
 
 export const Route = createFileRoute("/_authenticated/admin/reports")({
@@ -22,9 +21,16 @@ export const Route = createFileRoute("/_authenticated/admin/reports")({
   head: () => ({
     meta: [
       { title: "Sales Reports | Moon Pipe POS" },
-      { name: "description", content: "Daily, weekly, monthly, six-month and yearly sales totals for Moon Pipe, with Excel export." },
+      {
+        name: "description",
+        content:
+          "Daily, weekly, monthly, six-month and yearly sales totals for Moon Pipe, with Excel export.",
+      },
       { property: "og:title", content: "Sales Reports | Moon Pipe POS" },
-      { property: "og:description", content: "Sales performance overview and Excel exports for Moon Pipe." },
+      {
+        property: "og:description",
+        content: "Sales performance overview and Excel exports for Moon Pipe.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -62,10 +68,33 @@ function within<T extends { created_at: string }>(invoices: T[], from: Date) {
 const sum = (rows: { total: number; amount_paid: number }[], key: "total" | "amount_paid") =>
   rows.reduce((acc, i) => acc + Number(i[key]), 0);
 
-const effectiveBalance = (i: { total: number; amount_paid: number; carried_to_invoice_id?: string | null }) =>
-  i.carried_to_invoice_id ? 0 : Math.max(0, Number(i.total) - Number(i.amount_paid));
+// Sales = what actually changed hands: the new goods, not the balance this
+// invoice carried over from its predecessor.
+const netRevenue = (rows: { total: number; previous_balance?: number }[]) =>
+  rows.reduce((acc, i) => acc + Number(i.total) - Number(i.previous_balance ?? 0), 0);
 
-async function exportRows(rows: { invoice_no: string; created_at: string; customer_name: string; payment_method: string; subtotal: number; discount: number; total: number; amount_paid: number; delivery_date: string | null; carried_to_invoice_id?: string | null }[], label: string) {
+const effectiveBalance = (i: {
+  total: number;
+  amount_paid: number;
+  carried_to_invoice_id?: string | null;
+}) => (i.carried_to_invoice_id ? 0 : Math.max(0, Number(i.total) - Number(i.amount_paid)));
+
+async function exportRows(
+  rows: {
+    invoice_no: string;
+    created_at: string;
+    customer_name: string;
+    payment_method: string;
+    subtotal: number;
+    discount: number;
+    total: number;
+    previous_balance?: number;
+    amount_paid: number;
+    delivery_date: string | null;
+    carried_to_invoice_id?: string | null;
+  }[],
+  label: string,
+) {
   const data = rows
     .slice()
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
@@ -76,6 +105,7 @@ async function exportRows(rows: { invoice_no: string; created_at: string; custom
       "Payment Method": i.payment_method,
       Subtotal: Number(i.subtotal),
       Discount: Number(i.discount),
+      "Previous Balance": Number(i.previous_balance ?? 0),
       Total: Number(i.total),
       "Amount Paid": Number(i.amount_paid),
       Balance: effectiveBalance(i),
@@ -89,14 +119,43 @@ async function exportRows(rows: { invoice_no: string; created_at: string; custom
     "Payment Method": "",
     Subtotal: 0,
     Discount: 0,
+    "Previous Balance": rows.reduce((acc, i) => acc + Number(i.previous_balance ?? 0), 0),
     Total: sum(rows, "total"),
     "Amount Paid": sum(rows, "amount_paid"),
     Balance: rows.reduce((acc, i) => acc + effectiveBalance(i), 0),
     "Delivery Date": "",
   } as never);
 
+  // The TOTAL row above is gross: it re-counts whatever each invoice carried
+  // over from its predecessor. NET SALES is what actually changed hands.
+  data.push({
+    "Invoice No": "NET SALES",
+    Date: "",
+    Customer: "",
+    "Payment Method": "",
+    Subtotal: 0,
+    Discount: 0,
+    "Previous Balance": 0,
+    Total: netRevenue(rows),
+    "Amount Paid": 0,
+    Balance: 0,
+    "Delivery Date": "",
+  } as never);
+
   const sheet = XLSX.utils.json_to_sheet(data);
-  sheet["!cols"] = [{ wch: 14 }, { wch: 14 }, { wch: 24 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];
+  sheet["!cols"] = [
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 24 },
+    { wch: 14 },
+    { wch: 12 },
+    { wch: 10 },
+    { wch: 16 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 14 },
+  ];
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, label.slice(0, 30));
   const bytes = new Uint8Array(
@@ -114,7 +173,23 @@ async function exportRows(rows: { invoice_no: string; created_at: string; custom
 }
 
 function ReportsPage() {
-  const { data: invoices = [] } = useInvoices();
+  // Server-side window. Every figure on this page is filtered again client
+  // side, so this only has to be a lower bound that covers both "This year"
+  // (Jan 1 local) and the 12-month table (starts 11 months back) — hence the
+  // earlier of the two. Stable per mount: a changing value would mint a new
+  // query key on every render.
+  const fromIso = useMemo(() => {
+    const now = new Date();
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+    const tableStart = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    const from = yearStart < tableStart ? yearStart : tableStart;
+    // The DB stores `Utc::now().to_rfc3339()` → "…+00:00". Sending the "Z"
+    // form would make the lexicographic `created_at >= ?` compare drop the
+    // first second of the window, so match the stored suffix exactly.
+    return from.toISOString().replace(/Z$/, "+00:00");
+  }, []);
+
+  const { data: invoices = [] } = useInvoicesInRange(fromIso);
 
   const periods = [
     { key: "day", label: "Today" },
@@ -126,7 +201,7 @@ function ReportsPage() {
 
   const sections = periods.map((p) => {
     const rows = within(invoices, rangeStart(p.key));
-    return { ...p, rows, total: sum(rows, "total"), paid: sum(rows, "amount_paid") };
+    return { ...p, rows, total: netRevenue(rows), paid: sum(rows, "amount_paid") };
   });
 
   const now = new Date();
@@ -140,7 +215,7 @@ function ReportsPage() {
     return {
       label: d.toLocaleDateString("en-GB", { month: "short", year: "numeric" }),
       count: rows.length,
-      total: sum(rows, "total"),
+      total: netRevenue(rows),
       paid: sum(rows, "amount_paid"),
       rows,
     };

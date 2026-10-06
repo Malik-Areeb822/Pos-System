@@ -68,7 +68,7 @@ function AuthPage() {
         });
         if (!isAdminSetup) {
           toast.success(
-            "Your cashier registration request has been submitted. Please wait for Admin approval."
+            "Your cashier registration request has been submitted. Please wait for Admin approval.",
           );
         }
       } else {
@@ -87,15 +87,15 @@ function AuthPage() {
           {mode === "signin"
             ? "Staff sign in"
             : isAdminSetup
-            ? "First-time admin setup"
-            : "Register as cashier"}
+              ? "First-time admin setup"
+              : "Register as cashier"}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           {mode === "signin"
             ? "Access to the point-of-sale, inventory and sales reports."
             : isAdminSetup
-            ? "No admin account exists yet. This one-time setup creates the single owner account."
-            : "Submit a cashier request. The admin must approve it before you can use the POS."}
+              ? "No admin account exists yet. This one-time setup creates the single owner account."
+              : "Submit a cashier request. The admin must approve it before you can use the POS."}
         </p>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-4">
@@ -165,10 +165,10 @@ function AuthPage() {
             {loginMutation.isPending || registerMutation.isPending
               ? "Please wait…"
               : mode === "signin"
-              ? "Sign in"
-              : isAdminSetup
-              ? "Create admin account"
-              : "Submit cashier request"}
+                ? "Sign in"
+                : isAdminSetup
+                  ? "Create admin account"
+                  : "Submit cashier request"}
           </Button>
         </form>
 

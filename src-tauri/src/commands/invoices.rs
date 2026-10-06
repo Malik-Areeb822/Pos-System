@@ -12,6 +12,9 @@ pub struct ListInvoicesInput {
     pub offset: Option<i64>,
     /// Full-history search across invoice number and customer name.
     pub query: Option<String>,
+    pub from_date: Option<String>,
+    pub to_date: Option<String>,
+    pub customer_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -51,7 +54,14 @@ pub struct MarkPaidInput {
 pub async fn list_invoices(db: State<'_, crate::database::Db>, input: ListInvoicesInput, _auth: Option<String>) -> Result<Vec<Invoice>, AppError> {
     let pool = db.pool().await;
     let repo = InvoiceRepository::new(pool);
-    repo.list(input.limit.unwrap_or(50), input.offset.unwrap_or(0), input.query.as_deref()).await
+    repo.list(
+        input.limit.unwrap_or(50),
+        input.offset.unwrap_or(0),
+        input.query.as_deref(),
+        input.from_date.as_deref(),
+        input.to_date.as_deref(),
+        input.customer_id.as_deref(),
+    ).await
 }
 
 #[tauri::command]

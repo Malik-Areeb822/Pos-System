@@ -81,15 +81,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Moon Pipe" },
       {
         name: "description",
-        content:
-          "Pipes, fittings, commodes, basins, mixers and sanitary accessories.",
+        content: "Pipes, fittings, commodes, basins, mixers and sanitary accessories.",
       },
       { name: "author", content: "Moon Pipe and Sanitary Store" },
       { property: "og:title", content: "Moon Pipe" },
       {
         property: "og:description",
-        content:
-          "Pipes, fittings, commodes, basins, mixers and sanitary accessories.",
+        content: "Pipes, fittings, commodes, basins, mixers and sanitary accessories.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

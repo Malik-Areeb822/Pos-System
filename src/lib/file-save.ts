@@ -8,10 +8,7 @@ import { writeFile } from "@tauri-apps/plugin-fs";
  * Opens a native "Save As" dialog, then writes the bytes to the chosen path.
  * Returns the written path, or null when the user cancelled the dialog.
  */
-export async function saveWorkbook(
-  defaultName: string,
-  data: Uint8Array,
-): Promise<string | null> {
+export async function saveWorkbook(defaultName: string, data: Uint8Array): Promise<string | null> {
   const path = await save({
     defaultPath: defaultName,
     filters: [{ name: "Excel workbook", extensions: ["xlsx"] }],

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Fragment, useState } from "react";
 import { toast } from "sonner";
 
 import { AdminShell } from "@/components/admin/AdminShell";
@@ -15,9 +15,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { currency } from "@/features/inventory/api";
-import { useCustomers, useCreateCustomer, useReconcileBalances, type Customer } from "@/features/customers/api";
-import { useInvoices } from "@/features/invoices/api";
-import { formatDate } from "@/features/invoices/api";
+import { useCustomers, useCreateCustomer, type Customer } from "@/features/customers/api";
+import { formatDate, useCustomerInvoices } from "@/features/invoices/api";
 
 export const Route = createFileRoute("/_authenticated/admin/customers")({
   component: CustomersPage,
@@ -26,12 +25,13 @@ export const Route = createFileRoute("/_authenticated/admin/customers")({
 function CustomersPage() {
   const queryClient = useQueryClient();
   const { data: customers = [] } = useCustomers();
-  const { data: invoices = [] } = useInvoices();
   const createCustomer = useCreateCustomer();
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "", address: "" });
-  const reconcile = useReconcileBalances();
+  // Lazy per-customer invoice history — fetched only for the expanded row.
+  // Called at page level because hooks cannot live inside the `.map` below.
+  const history = useCustomerInvoices(expanded, expanded !== null);
 
   const create = useMutation({
     mutationFn: async () => {
@@ -57,49 +57,38 @@ function CustomersPage() {
       title="Customers"
       actions={
         <>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={reconcile.isPending}
-            onClick={() => reconcile.mutate(undefined, {
-              onSuccess: (n) => toast.success(`${n} customer balances reconciled`),
-              onError: (err: Error) => toast.error(err.message),
-            })}
-          >
-            Reconcile
-          </Button>
           <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" variant="brass">
-              Add customer
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>New customer</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              {(["name", "phone", "email", "address"] as const).map((key) => (
-                <div key={key} className="space-y-2">
-                  <Label className="capitalize">{key}</Label>
-                  <Input
-                    value={form[key]}
-                    maxLength={200}
-                    onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-                  />
-                </div>
-              ))}
-              <Button
-                variant="brass"
-                className="w-full"
-                disabled={create.isPending}
-                onClick={() => create.mutate()}
-              >
-                Save customer
+            <DialogTrigger asChild>
+              <Button size="sm" variant="brass">
+                Add customer
               </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>New customer</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                {(["name", "phone", "email", "address"] as const).map((key) => (
+                  <div key={key} className="space-y-2">
+                    <Label className="capitalize">{key}</Label>
+                    <Input
+                      value={form[key]}
+                      maxLength={200}
+                      onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                    />
+                  </div>
+                ))}
+                <Button
+                  variant="brass"
+                  className="w-full"
+                  disabled={create.isPending}
+                  onClick={() => create.mutate()}
+                >
+                  Save customer
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </>
       }
     >
@@ -122,18 +111,16 @@ function CustomersPage() {
               </tr>
             )}
             {customers.map((c: Customer) => {
-              const history = invoices.filter((i) => i.customer_id === c.id);
+              const isExpanded = expanded === c.id;
+              const rows = history.data ?? [];
               return (
-                <>
+                <Fragment key={c.id}>
                   <tr
-                    key={c.id}
-                    onClick={() => setExpanded(expanded === c.id ? null : c.id)}
+                    onClick={() => setExpanded(isExpanded ? null : c.id)}
                     className="cursor-pointer border-b border-border last:border-0 hover:bg-accent/50"
                   >
                     <td className="px-4 py-3 font-medium">{c.name}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {c.phone ?? c.email ?? "—"}
-                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{c.phone ?? c.email ?? "—"}</td>
                     <td
                       className={`px-4 py-3 text-right ${
                         Number(c.outstanding_balance) > 0 ? "text-destructive" : ""
@@ -141,29 +128,38 @@ function CustomersPage() {
                     >
                       {currency(c.outstanding_balance)}
                     </td>
-                    <td className="px-4 py-3 text-right">{history.length}</td>
+                    <td className="px-4 py-3 text-right">{c.invoice_count ?? 0}</td>
                   </tr>
-                  {expanded === c.id && (
-                    <tr key={`${c.id}-history`} className="border-b border-border bg-muted/40">
+                  {isExpanded && (
+                    <tr className="border-b border-border bg-muted/40">
                       <td colSpan={4} className="px-4 py-3">
-                        {history.length === 0 ? (
+                        {history.isLoading ? (
+                          <p className="text-xs text-muted-foreground">Loading invoices…</p>
+                        ) : rows.length === 0 ? (
                           <p className="text-xs text-muted-foreground">No invoices yet.</p>
                         ) : (
-                          <ul className="space-y-1 text-xs">
-                            {history.map((i) => (
-                              <li key={i.id} className="flex justify-between">
-                                <span>
-                                  {i.invoice_no} · {formatDate(i.created_at)}
-                                </span>
-                                <span>{currency(i.total)}</span>
-                              </li>
-                            ))}
-                          </ul>
+                          <>
+                            <ul className="space-y-1 text-xs">
+                              {rows.map((i) => (
+                                <li key={i.id} className="flex justify-between">
+                                  <span>
+                                    {i.invoice_no} · {formatDate(i.created_at)}
+                                  </span>
+                                  <span>{currency(i.total)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            {rows.length >= 200 && (
+                              <p className="mt-2 text-[10px] text-muted-foreground">
+                                Showing the most recent 200 invoices.
+                              </p>
+                            )}
+                          </>
                         )}
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               );
             })}
           </tbody>

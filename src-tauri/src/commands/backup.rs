@@ -15,6 +15,7 @@ const REQUIRED_TABLES: &[&str] = &[
     "invoices",
     "invoice_items",
     "returns",
+    "app_settings",
     "_sqlx_migrations",
 ];
 
@@ -29,6 +30,17 @@ fn timestamp() -> String {
 /// Escape a path for use as an SQLite string literal (VACUUM INTO).
 fn sql_literal(path: &Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\'', "''"))
+}
+
+/// Delete stale WAL side files next to `db_path`. Every pool on that file must
+/// already be closed: a leftover `-wal`/`-shm` belonging to the *previous*
+/// database would otherwise be replayed into the freshly copied one. Best
+/// effort — the files may simply not be there.
+async fn remove_stale_wal_files(db_path: &Path) {
+    let base = db_path.to_string_lossy().to_string();
+    for suffix in ["-wal", "-shm"] {
+        let _ = fs::remove_file(format!("{}{}", base, suffix)).await;
+    }
 }
 
 #[tauri::command]
@@ -92,7 +104,7 @@ pub async fn import_database(app: AppHandle, db: State<'_, Db>, backup_path: Str
         .unwrap_or_else(|_| "probe failed".to_string());
     let found_tables: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN (
-            'users','products','customers','invoices','invoice_items','returns','_sqlx_migrations'
+            'users','products','customers','invoices','invoice_items','returns','app_settings','_sqlx_migrations'
         )",
     )
     .fetch_one(&probe)
@@ -128,8 +140,13 @@ pub async fn import_database(app: AppHandle, db: State<'_, Db>, backup_path: Str
     let old = guard.clone();
     old.close().await;
 
+    // The old pool is closed and nothing else can hold the file: this is the
+    // earliest safe moment to drop side files left by the *previous* database.
+    remove_stale_wal_files(&config.db_path).await;
+
     if let Err(e) = fs::copy(&stage_path, &config.db_path).await {
         // Try to bring the old pool back so the app stays usable.
+        remove_stale_wal_files(&config.db_path).await;
         if let Ok(revived) = crate::database::open_pool(&config.db_path).await {
             *guard = revived;
         }
@@ -137,12 +154,28 @@ pub async fn import_database(app: AppHandle, db: State<'_, Db>, backup_path: Str
         return Err(AppError::Internal(format!("Restore failed: {}", e)));
     }
     let _ = fs::remove_file(&stage_path).await;
+    remove_stale_wal_files(&config.db_path).await;
 
     match crate::database::open_pool(&config.db_path).await {
         Ok(new_pool) => {
+            // Ensure app_settings table and lock row exist (old backups may not have them)
+            let _ = sqlx::query(
+                "CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )"
+            ).execute(&new_pool).await;
+            let _ = sqlx::query(
+                "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('system_lock', '0')"
+            ).execute(&new_pool).await;
+
             // Bring a restored database up to retention policy too (older
             // backups may contain sales beyond the 12-month window).
             let purge_pool = new_pool.clone();
+            // A backup from before the carry-forward work can carry stale
+            // balances; recompute them from its own invoice ledger.
+            let reconcile_pool = new_pool.clone();
             *guard = new_pool;
             drop(guard);
             let _ = old; // already closed
@@ -150,6 +183,10 @@ pub async fn import_database(app: AppHandle, db: State<'_, Db>, backup_path: Str
             tauri::async_runtime::spawn(crate::services::retention::run_maintenance(
                 app.clone(),
                 purge_pool,
+            ));
+            tauri::async_runtime::spawn(crate::services::reconciliation::run_and_notify(
+                app.clone(),
+                reconcile_pool,
             ));
             Ok(())
         }
@@ -216,4 +253,39 @@ pub struct BackupInfo {
     pub name: String,
     pub size: u64,
     pub created: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn remove_stale_wal_files_deletes_side_files_only() {
+        let dir =
+            std::env::temp_dir().join(format!("moonpipe-wal-cleanup-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("moonpipe.db");
+        let wal = dir.join("moonpipe.db-wal");
+        let shm = dir.join("moonpipe.db-shm");
+
+        std::fs::write(&db, b"db").unwrap();
+        std::fs::write(&wal, b"wal").unwrap();
+        std::fs::write(&shm, b"shm").unwrap();
+
+        remove_stale_wal_files(&db).await;
+
+        assert!(!wal.exists(), "stale -wal should be removed");
+        assert!(!shm.exists(), "stale -shm should be removed");
+        assert!(db.exists(), "the database file itself must survive");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn remove_stale_wal_files_is_harmless_when_nothing_exists() {
+        let db =
+            std::env::temp_dir().join(format!("moonpipe-wal-missing-{}.db", uuid::Uuid::new_v4()));
+        // Must not panic on a database that was never opened in WAL mode.
+        remove_stale_wal_files(&db).await;
+    }
 }
