@@ -5,15 +5,15 @@
 
 > **Goal**: Convert to single executable, auto-start, fully offline, loosely coupled
 > **Constraint**: Zero functional changes to core POS behavior
-> **Status**: 🟢 PRE-DEPLOY FIX PLAN IMPLEMENTED — Phases 1–4 ✅ (2026-10-06, plan `PRE_DEPLOY_FIX_PLAN.md`). Gates 1–6 clean; gate 7 WAL smoke clean; 4 manual UI smoke checks + one restore end-to-end still to run by hand. Prior: 🟡 carry-forward system complete (2026-10-03), system lock + AZ Solutions signing (2026-09-22). `cargo test --lib` is **47 passed / 0 failed / 1 ignored**.
+> **Status**: 🟢 **v1.1.0 BUILT AND SIGNED — awaiting install** — Phases 1–4 ✅, gates 1–6 ✅, gate 7a ✅, repo-wide lint ✅ **0 errors / 6 warnings**, committed as `adf0a39`, MSI + NSIS built at **1.1.0** and signed (Signer `CN=AZ Solutions`, `signtool verify /pa` = Valid). **Remaining:** owner installs the NSIS build, then gate 7b (5-point UI checklist) + gate 7c (backup→restore) against the installed app. Prior: 🟡 carry-forward system complete (2026-10-03), system lock + AZ Solutions signing (2026-09-22). `cargo test --lib` = **47 passed / 0 failed / 1 ignored**.
 > **Date**: 2026-10-06
 > **Phase**: Phase C release
 
 ---
 
-## 🔥 Session 2026-10-06: Pre-Deployment Fix Plan — Phases 2 frontend, 3, 4 + gates
+## 🔥 Session 2026-10-06: Pre-Deployment Fix Plan — Phases 2 frontend/3/4, gates, and the v1.1.0 release build
 
-**Status**: 🟢 **COMPLETE (code).** Plan: `PRE_DEPLOY_FIX_PLAN.md`. Phase 2 frontend (2.2/2.3/2.6/2.7) ✅, Phase 3 ✅, Phase 4 ✅, gates 1–6 ✅, gate 7a (WAL) ✅.
+**Status**: 🟢 **COMPLETE except install + gates 7b/7c.** Plan: `PRE_DEPLOY_FIX_PLAN.md`. Phase 2 frontend (2.2/2.3/2.6/2.7) ✅, Phase 3 ✅, Phase 4 ✅, gates 1–6 ✅, gate 7a (WAL) ✅, repo-wide lint ✅, commit `adf0a39` ✅, **v1.1.0 MSI + NSIS built and signed** ✅.
 
 ### Done
 
@@ -57,9 +57,27 @@
 - `.prettierrc` had no `endOfLine`, so prettier's `lf` default flagged **1027 of 1129** findings as CRLF artifacts under `core.autocrlf=true`. Added `"endOfLine": "auto"`, then `eslint --fix` cleared the remaining 105 genuine prettier issues across 24 files (verified `tsc` still 14 and `vite build` still ✓).
 - The 6 warnings are stock shadcn `react-refresh/only-export-components` in `ui/*.tsx`.
 
+### Release build (2026-10-06)
+
+| Step | Result |
+|------|--------|
+| Commit | `adf0a39 feat: pre-deploy fix plan (phases 1-4) + release hardening` — 79 files. `.gitignore` now excludes `*.pfx` and `.opencode/` so the signing key cannot be committed. **Note:** this commit holds the code + lint output only; the version bump below is still uncommitted at time of writing |
+| Version bump | **1.1.0** in both `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` (`package.json` has no version field). Both must match or Tauri warns |
+| Build | `cargo tauri build` — 5m45s. `beforeBuildCommand` ran `vite build --config vite.config.spa.ts` → `dist-spa`, then `cargo build --release --features tauri/custom-protocol`, then WiX + makensis |
+| Artifacts | `src-tauri/target/release/bundle/msi/Moon Pipe POS_1.1.0_x64_en-US.msi` (9.9 MB) and `.../nsis/Moon Pipe POS_1.1.0_x64-setup.exe` (7.3 MB) |
+| Sign | `signtool sign /f signing-cert.pfx /p MoonPipe2026 /fd SHA256 /tr http://timestamp.digicert.com /td SHA256` — 0 errors on both. Signer `CN=AZ Solutions`, timestamp `CN=DigiCert SHA256 RSA4096 Timestamp Responder 2026 1` |
+| Trust store | First `signtool verify /pa` failed with *"chain terminated in a root certificate which is not trusted"* — the pfx lived only in `CurrentUser\My`. Imported the **public** cert (private key deliberately not stored) into `LocalMachine\Root` + `LocalMachine\TrustedPublisher` via an elevated run; thumbprint `2D1CFE03D65E62BF992595D5E372BCDE5BC6E74A`. Both installers now report `signtool verify /pa` = **Successfully verified** and `Get-AuthenticodeSignature` = **Valid** |
+| Prior install | `D:\Projects\pos\Moon Pipe POS\` holds **1.0.0** (built 2026-09-22), registered in the uninstall hive as `Moon Pipe POS 1.0.0`. 1.1.0 upgrades over it. Shared DB: `C:\ProgramData\MoonPipe\moonpipe.db` |
+
+**Debug-vs-release trap (cost us an hour):** `tauri/build.rs` sets `dev = !custom_protocol`, and `tauri-2.11.5` `manager/mod.rs:356` does `#[cfg(dev)] let url = self.config.build.dev_url`. So any binary built by plain `cargo build` (feature off → `cfg(dev)` on) points the webview at `http://localhost:8080` and never falls back to `frontendDist` → `ERR_CONNECTION_REFUSED` unless a vite server is running. `cargo build --release` behaves the *same way*. Only `cargo tauri build` / `npx tauri build` flips `custom-protocol` on. The **1.1.0 release exe needs no server at all.**
+
+**Debug console trap:** `src-tauri/src/main.rs:2` is `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`, so **debug** builds are console apps — closing their CMD window sends `CTRL_CLOSE_EVENT` and kills the POS. Release builds have no console. Logs always go to `AppData\Local\com.moonpipe.pos\logs\Moon Pipe POS.log` regardless.
+
 ### Still to run by hand
-- **Gate 7b — UI smoke:** the owner ran the app against vite (PID 10008) and exercised it — live-DB invoice count went **19 → 21** during the session — but the 5-point checklist (dashboard "Sales today" == Reports "Today", rolling 7-day card, POS duplicate reuse, Orders vs history, Excel **NET SALES** row) was never formally signed off. **Re-run it against the installed build (step 11).**
+- **Step 11 — install:** owner runs `Moon Pipe POS_1.1.0_x64-setup.exe` interactively (UAC now shows publisher **AZ Solutions**), then launches it.
+- **Gate 7b — UI smoke against the installed build:** dashboard "Sales today" == Reports "Today" card · rolling 7-day card · POS walk-in duplicate reuse · customer Orders count vs history · Excel export row count + **NET SALES** row. The owner did exercise the debug app during this session (live-DB invoice count went **19 → 21**), but the 5-point checklist was never formally signed off.
 - **Gate 7c — restore end-to-end:** not run. `remove_stale_wal_files` call sites are unit-tested only.
+- Verify the installed exe reports file version 1.1.0 and `PRAGMA journal_mode = wal` on first launch.
 
 ### Corrections vs the plan
 - Current SQLite numbers `synchronous` as `0=OFF, 1=NORMAL, 2=FULL, 3=EXTRA` — the new test originally asserted `2`.
@@ -105,7 +123,7 @@ Remaining items from this session were delivered on 2026-10-06 (see above).
 | **2.7** | ✅ `admin.customers.tsx` — Orders → `c.invoice_count`, page `useInvoices()` dropped, lazy history + "most recent 200" note, Fragment keyed; `invoice_count?: number` on both TS `Customer` types |
 | **3** | ✅ POS `createCustomer` try/catch → re-lookup & reuse / anonymous walk-in + warning; `["pos-customers"]` invalidated on create + realtime event |
 | **4** | ✅ `connection.rs` — one-time `PRAGMA journal_mode=WAL` + `busy_timeout=5000`, `synchronous=NORMAL`, `foreign_keys=ON`; `backup.rs::import_database` — `moonpipe.db-wal`/`-shm` removed at all 3 points |
-| **Gates** | ✅ 1–6 clean, 7a clean; **7b (UI smoke) and 7c (restore end-to-end) still to run by hand** |
+| **Gates** | ✅ 1–6 clean, 7a clean, repo-wide lint clean; **7b (UI smoke) and 7c (restore end-to-end) still to run by hand against the 1.1.0 install** |
 | **Note** | Migrations 017 + 018 **are** applied to the live DB (confirmed `versions=[1..18]`, `ux_customers_name_phone` present) — this note was stale |
 
 ---

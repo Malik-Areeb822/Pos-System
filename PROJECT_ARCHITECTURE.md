@@ -44,6 +44,7 @@
 | **Receipt Rasterizer** | Monochrome Bitmap Generator (`ab_glyph` + `GS v 0`) | [src-tauri/src/services/receipt_bitmap.rs](src-tauri/src/services/receipt_bitmap.rs) |
 | **Printer Transport** | Windows Spooler RAW API + Direct USB (`rusb`) | [src-tauri/src/services/print.rs](src-tauri/src/services/print.rs) |
 | **PDF Engine** | `genpdf` with embedded DejaVuSans TTF fonts | [src-tauri/src/services/invoice_pdf.rs](src-tauri/src/services/invoice_pdf.rs) |
+| **Release** | `cargo tauri build` (vite SPA → `dist-spa` → `custom-protocol` → WiX MSI + makensis NSIS), signed post-build — **v1.1.0** | [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) |
 
 ---
 
@@ -93,11 +94,10 @@ moonpipe-pos-main/
 │           ├── admin.cashiers.tsx               # Staff & Cashier Account Approvals
 │           ├── admin.suppliers.tsx              # Supplier Directory & Purchase Ledger
 │           └── admin.settings.tsx               # Database Backup, Restore, Retention Settings
-│
+├── signing-cert.pfx                             # Self-signed code signing cert (CN=AZ Solutions) — GITIGNORED, repo root only
 └── src-tauri/                                   # BACKEND (Rust & Tauri Shell)
     ├── tauri.conf.json                          # Tauri App Config & Window Parameters
     ├── Cargo.toml                               # Rust Dependencies & Features
-    ├── signing-cert.pfx                         # Self-signed code signing cert (CN=AZ Solutions)
     └── src/
         ├── main.rs                              # Windows Binary Entry
         ├── lib.rs                               # Main Tauri Builder & Command Registry
@@ -552,8 +552,19 @@ The frontend interacts with Rust backend commands exclusively through `apiInvoke
 
 > [!IMPORTANT]
 > **8. Code Signing**
-> Self-signed certificate `CN=AZ Solutions` (SHA-256, valid to 2031). Password: `MoonPipe2026`. Both MSI and NSIS installers are signed with DigiCert RFC3161 timestamp via `signtool.exe`. SmartScreen warnings are expected for self-signed certs. Certificate file: `signing-cert.pfx` in project root.
+> Self-signed certificate `CN=AZ Solutions` (SHA-256, valid to 2031). Password: `MoonPipe2026`. Certificate file: `signing-cert.pfx` in project root — **gitignored, never commit it.** Both MSI and NSIS installers are signed after `cargo tauri build` with a separate `signtool` pass (Tauri itself does not sign):
+> `signtool sign /f signing-cert.pfx /p MoonPipe2026 /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 <artifact>`
+> Signer thumbprint `2D1CFE03D65E62BF992595D5E372BCDE5BC6E74A`. The **public** cert must be imported into `LocalMachine\Root` **and** `LocalMachine\TrustedPublisher` (never the private key) or `signtool verify /pa` fails with *"chain terminated in a root certificate which is not trusted"* and installers show **Unknown publisher**. With it installed, `signtool verify /pa` = Successfully verified and `Get-AuthenticodeSignature` = Valid. SmartScreen reputation warnings are still expected — self-signed certs never accumulate reputation.
 
 > [!IMPORTANT]
 > **9. Supplier Purchase Chain — Mirror of the Invoice Chain**
 > `supplier_purchases.previous_balance` is read from `suppliers.outstanding_balance` at creation; `total = subtotal - discount + previous_balance`; supplier balance is SET to `MAX(0, total - amount_paid)` (never `+=`). Absorbed open purchases are marked `carried_to_purchase_id = <new id>` (all of them). `mark_supplier_purchase_paid` rejects purchases with a non-NULL `carried_to_purchase_id`, naming the successor. `suppliers.outstanding_balance` is derived from non-carried open purchases and re-computed by the same reconciliation pass that fixes customers. Column name is `carried_to_purchase_id` — **never** `carried_to_invoice_id` (migration 017).
+
+> [!IMPORTANT]
+> **10. Release Build — `cargo tauri build`, never bare `cargo build`**
+> The shippable artifacts come from `cargo tauri build` (or `npx tauri build`), which runs `beforeBuildCommand` (`npx vite build --config vite.config.spa.ts` → `dist-spa/`), then compiles with the **`custom-protocol` feature**, then bundles WiX (MSI) + makensis (NSIS). Version is declared in **two** places that must match: `src-tauri/tauri.conf.json` (drives the installer filename and app version) and `src-tauri/Cargo.toml` (drives the exe/file version). Current release: **1.1.0** → `src-tauri/target/release/bundle/msi/Moon Pipe POS_1.1.0_x64_en-US.msi` and `.../nsis/Moon Pipe POS_1.1.0_x64-setup.exe`. Test/lint gates before any build: `cargo test --lib`, `npm run lint`, `npx tsc --noEmit`.
+
+> [!CAUTION]
+> **11. Debug Build Traps — localhost:8080 and the vanishing console**
+> **(a) URL:** `tauri/build.rs` computes `dev = !custom_protocol`, and `tauri-2.11.5` `manager/mod.rs` does `#[cfg(dev)] let url = self.config.build.dev_url`. A binary from a bare `cargo build` **or `cargo build --release`** has `custom-protocol` off → `cfg(dev)` on → the webview loads `devUrl` (`http://localhost:8080`) and **never falls back to `frontendDist`**, producing `ERR_CONNECTION_REFUSED` unless `npx vite --config vite.config.spa.ts --port 8080` (the `beforeDevCommand`) is running. Only `cargo tauri build` flips the feature; the shipped exe needs no server.
+> **(b) Console:** `src-tauri/src/main.rs:2` is `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`, so **debug** builds are console apps — closing their CMD window sends `CTRL_CLOSE_EVENT` and terminates the POS. Release builds allocate no console. Logs always land in `AppData\Local\com.moonpipe.pos\logs\Moon Pipe POS.log`.
