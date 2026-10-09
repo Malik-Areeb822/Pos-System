@@ -12,6 +12,6 @@ use sqlx::SqlitePool;
 pub use products::{ProductRepository, Product, CreateProductInput};
 pub use customers::{CustomerRepository, Customer, CreateCustomerInput};
 pub use invoices::{InvoiceRepository, Invoice, InvoiceItem, CreateInvoiceInput, CreateInvoiceItemInput};
-pub use returns::{ReturnRepository, Return, CreateReturnInput};
+pub use returns::{ReturnRepository, Return, CreateReturnInput, CreateReturnsInput, CreateReturnLineInput};
 pub use cashiers::{CashierRepository, Cashier};
 pub use users::{UserRepository, User, CreateUserInput};

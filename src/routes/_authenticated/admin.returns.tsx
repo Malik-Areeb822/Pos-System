@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { currency } from "@/features/inventory/api";
 import { useInvoices, useInvoice, type Invoice, type InvoiceItem } from "@/features/invoices/api";
 import { formatDate } from "@/features/invoices/api";
-import { useReturns, useCreateReturn, type Return } from "@/features/returns/api";
+import { useReturns, useCreateReturnsBulk, type Return } from "@/features/returns/api";
 
 export const Route = createFileRoute("/_authenticated/admin/returns")({
   component: ReturnsPage,
@@ -70,31 +70,32 @@ function ReturnsPage() {
     return list.slice(0, 8);
   }, [invoices, query]);
 
-  const createReturn = useCreateReturn();
+  const bulkReturn = useCreateReturnsBulk();
 
   const submit = useMutation({
     mutationFn: async () => {
-      const payload = items
+      const lines = items
         .map((item) => ({
-          invoice_id: invoiceId,
           product_id: item.product_id,
           product_name: item.product_name,
           quantity: Number(qty[item.id]) || 0,
           unit: item.unit,
           unit_price: Number(item.unit_price),
-          line_total: Number(item.unit_price) * (Number(qty[item.id]) || 0),
-          reason: reason.trim(),
         }))
         .filter((row) => row.quantity > 0);
-      if (payload.length === 0) throw new Error("Enter at least one returned quantity");
+      if (lines.length === 0) throw new Error("Enter at least one returned quantity");
       for (const item of items) {
         const q = Number(qty[item.id]) || 0;
         if (q > remainingOf(item))
           throw new Error(`${item.product_name}: only ${remainingOf(item)} left to return`);
       }
-      for (const p of payload) {
-        await createReturn.mutateAsync(p);
-      }
+      // ONE call, ONE transaction: a rejected line leaves nothing applied,
+      // instead of the old loop that had already committed the earlier lines.
+      await bulkReturn.mutateAsync({
+        invoice_id: invoiceId,
+        reason: reason.trim(),
+        lines,
+      });
     },
     onSuccess: () => {
       toast.success("Return recorded — stock, sale & profit adjusted");

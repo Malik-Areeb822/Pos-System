@@ -110,6 +110,7 @@ pub fn run() {
             // Return commands
             commands::returns::list_returns,
             commands::returns::create_return,
+            commands::returns::create_returns_bulk,
             
             // Report commands
             commands::reports::get_dashboard,

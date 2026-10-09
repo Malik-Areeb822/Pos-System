@@ -175,6 +175,7 @@ export interface InvoicesApi {
 export interface ReturnsApi {
   list(): Promise<Return[]>;
   create(input: CreateReturnInput): Promise<Return>;
+  createBulk(input: CreateReturnsBulkInput): Promise<Return[]>;
 }
 
 export interface ReportsApi {
@@ -352,6 +353,23 @@ export interface CreateReturnInput {
   unit: string;
   unit_price: number;
   reason: string;
+}
+
+/** One line of a bulk return. No `line_total`: the backend derives it from
+ *  `quantity * unit_price`, so the client can never overstate the credit. */
+export interface CreateReturnLineInput {
+  product_id: string | null;
+  product_name: string;
+  quantity: number;
+  unit: string;
+  unit_price: number;
+}
+
+/** The whole submission — one invoice, one reason, N lines, ONE transaction. */
+export interface CreateReturnsBulkInput {
+  invoice_id: string;
+  reason: string;
+  lines: CreateReturnLineInput[];
 }
 
 // Wire-shape truth: these mirror the serde structs in src-tauri/src/commands/reports.rs
@@ -580,6 +598,7 @@ export const api: ApiClient = {
   returns: {
     list: () => apiInvoke("list_returns", { input: {} }, { feature: "returns" }),
     create: (input) => apiInvoke("create_return", { input }, { feature: "returns" }),
+    createBulk: (input) => apiInvoke("create_returns_bulk", { input }, { feature: "returns" }),
   },
   reports: {
     getDashboard: () => apiInvoke("get_dashboard", {}, { feature: "reports" }),

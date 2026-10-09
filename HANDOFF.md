@@ -5,9 +5,480 @@
 
 > **Goal**: Convert to single executable, auto-start, fully offline, loosely coupled
 > **Constraint**: Zero functional changes to core POS behavior
-> **Status**: 🟢 **v1.1.0 BUILT AND SIGNED — awaiting install** — Phases 1–4 ✅, gates 1–6 ✅, gate 7a ✅, repo-wide lint ✅ **0 errors / 6 warnings**, committed as `adf0a39`, MSI + NSIS built at **1.1.0** and signed (Signer `CN=AZ Solutions`, `signtool verify /pa` = Valid). **Remaining:** owner installs the NSIS build, then gate 7b (5-point UI checklist) + gate 7c (backup→restore) against the installed app. Prior: 🟡 carry-forward system complete (2026-10-03), system lock + AZ Solutions signing (2026-09-22). `cargo test --lib` = **47 passed / 0 failed / 1 ignored**.
-> **Date**: 2026-10-06
-> **Phase**: Phase C release
+> **Status**: 🟢 **v1.1.2 BUILT AND SIGNED (rebuilt) — awaiting install.** Backup & Restore hardening **implemented** (see 🗄️ session below): restore is now a 10-step guarded swap (live-DB guard, WAL sidecar staging, migration-version check, fatal pre-restore snapshot, rollback on failure); `list_backups` is admin-gated; ms-resolution backup filenames; Settings gets a real error state. Gates: `cargo test --lib` **63 / 0 / 1** (was 55), clippy **38** (baseline 39), lint **0 errors / 6 warnings**, tsc **14** (= baseline), `npx tauri build` EXIT 0, signtool sign+verify ×2 = **Successfully verified**. Install **1.1.1 first, then 1.1.2** (1.1.1 fixes the CHECK crash; 1.1.2 adds the bulk path + hardened restore).
+> **Next**: user manual UI smoke (Gate 7b) + git commit (user handles). ⛔ **Never roll back below 1.1.0** — migrations 016-018; a build lacking them exits at launch.
+> **Date**: 2026-10-08
+> **Phase**: Phase C release — multi-line returns + backup/restore hardening
+
+---
+
+## 🗄️ Session 2026-10-08 (release 1.1.2): Backup & Restore hardening
+
+**Status**: ✅ **IMPLEMENTED, BUILT, SIGNED — all gates green.** Scope agreed with the user: **all three tiers**, picker option **A** (kept the manual "Choose backup file…" button), version stayed **1.1.2** (rebuilt over the earlier 1.1.2 artifacts as planned).
+
+**Files touched (exactly the planned set):**
+`src-tauri/src/commands/backup.rs` · `src-tauri/src/services/retention.rs` · `src/routes/_authenticated/admin.settings.tsx` · `HANDOFF.md` · `PROJECT_ARCHITECTURE.md` · `PRE_DEPLOY_FIX_PLAN.md`
+
+> ⛔ **Downgrade rule (from §3, now documented in both docs):** never roll the app back below **1.1.0** — migrations 016-018 shipped in `adf0a39`, and sqlx validates every applied migration on every launch, so e.g. the old 1.0.0 installer **exits instead of booting**. 1.1.0 / 1.1.1 / 1.1.2 are mutually restorable.
+
+---
+
+### ✅ Results
+
+**Backend (`commands/backup.rs`, full rewrite):**
+- 5 helpers extracted: `ensure_not_live_db` (H1), `prepare_stage` (H2), `validate_stage` (M3+M4), `remove_stale_wal_files` → `Result<(), String>` (M1), `rollback_to_snapshot` (M2).
+- New 10-step `import_database` per the table in §5 below — every step implemented as specified (stage copy now includes `-wal`/`-shm`; pre-restore snapshot FATAL; swap failures roll back; `emit_database_restored` fires only on the true success path).
+- `REQUIRED_TABLES` 8 → 7 (`app_settings` dropped → M4); validation SQL generated from the constant at runtime.
+- L1: `list_backups` renamed `_auth` → `auth_header` + `require_admin` (load-bearing — the frontend sends `authHeader`).
+- L2: `timestamp()` → `%Y%m%d_%H%M%S%.3f`; same in `retention.rs:49`.
+
+**Frontend (`admin.settings.tsx`):**
+- F2: `backups.isError` branch with the real error message + Retry that calls `resetCircuitBreaker("backups")` before refetching.
+- L7: dialog copy no longer says "This cannot be undone" — it now points at the automatic `pre_restore` snapshot in the backups list as the rollback path.
+
+**Tests:** 8 new in `backup.rs` (as planned) + the 2 existing `remove_stale_wal_files` tests updated to the `Result` signature → `cargo test --lib` **63 passed / 0 failed / 1 ignored** (baseline 55/0/1). Notably `prepare_stage_folds_wal_sidecars_into_a_self_contained_file` is the H2 proof (row living only in the `-wal` survives staging; header byte 18 == `1`, no sidecar left).
+
+**Deviations from the plan (all minor, none behavioral):**
+- `Path::eq_ignore_ascii_case` doesn't exist in std → `ensure_not_live_db` canonicalizes both paths and compares `to_string_lossy().eq_ignore_ascii_case` (also resolves Windows case/8.3 aliases — the test uses `MOONPIPE.DB` vs `moonpipe.db`).
+- `validate_stage` binds `i64` (not `String`) for the `COUNT(*)` IN-list; migration guard query uses `query_scalar` too.
+- `wal_checkpoint(TRUNCATE)` issued via `fetch_all` (may return zero rows on a non-WAL source) + `journal_mode=DELETE` asserted case-insensitively after `fetch_one`.
+- clippy flagged `unnecessary_sort_by` in the new `list_backups` → fixed with `sort_by_key(Reverse(..))`, so clippy ended at **38** (baseline 39).
+
+**Gates (all green):**
+
+| Gate | Result |
+|---|---|
+| 1. `cargo check --all-targets` | ✅ 0 errors, no new warnings |
+| 2. `cargo test --lib` | ✅ **63 / 0 / 1** (baseline 55/0/1) |
+| 3. `cargo clippy --all-targets` | ✅ 0 errors, **38** warnings (baseline 39) |
+| 4. `npm run lint` | ✅ 0 errors / 6 warnings (= baseline) |
+| 4b. `npx tsc --noEmit` | ✅ exactly **14** (= baseline) |
+| 5. `npx tauri build` | ✅ EXIT 0 — MSI + NSIS rebuilt (overwrote the earlier signed 1.1.2 as planned) |
+| 6. `signtool sign` ×2 + `verify /pa` ×2 | ✅ both **Successfully verified**, sha256/RFC3161, 0 errors / 0 warnings |
+| 7. Doc encoding | ✅ UTF-8, no BOM, 0 U+FFFD (all edits via `edit` tool) |
+
+**Artifacts (both signed):**
+- `src-tauri\target\release\bundle\msi\Moon Pipe POS_1.1.2_x64_en-US.msi`
+- `src-tauri\target\release\bundle\nsis\Moon Pipe POS_1.1.2_x64-setup.exe`
+
+**Docs updated (§9):** `PROJECT_ARCHITECTURE.md` IPC rows now name the real commands (`export_database`/`import_database`/`list_backups` + `api.backups.*`, purge row → `retention.rs::purge_old_sales`), line ~115 drops "Purge", settings row → "Backup & Restore Settings", downgrade rule added by the migrations tree; `PRE_DEPLOY_FIX_PLAN.md` Gate 7c → ✅ with the 2026-10-08 evidence + status line updated.
+
+**Still to run by hand:** Gate 7b UI smoke; **git commit is the user's** (nothing committed by the agent).
+
+---
+
+### 1. Why (the audit)
+
+Read `commands/backup.rs` (all 291 lines), `database/connection.rs`, `services/retention.rs`, `admin.settings.tsx`, `route.tsx`, plus on-disk evidence and the app log.
+
+**The normal flow is sound. Do not re-audit it.**
+
+- Exports use `VACUUM INTO` off the live pool ⇒ transactionally consistent.
+- Verified on disk: both existing backups are **`rollback(delete)` journal, `change_counter=1`, zero `-wal`/`-shm` sidecars** — fully self-contained, nothing to lose later.
+- Restore validates (`integrity_check` + required tables) **before** touching the live DB, auto-snapshots first, closes the old pool, clears stale WAL, reopens + migrates + seeds, emits `database:restored` (frontend invalidates *all* queries, `route.tsx:47-49`).
+- **A real restore already ran today** — log `2026-10-08 10:47:54 UTC` (= 15:47:54 local) matches `pre_restore_20261008_104754.sqlite`, **zero errors**, live DB 233,472 B / 57 pages / `schema_cookie 66` identical to both backups.
+
+Everything below is an **edge case**, ranked by how likely it actually is.
+
+### 2. Findings
+
+| # | Sev | Issue | Probability | Impact |
+|---|---|---|---|---|
+| **H1** | High | Picker accepts `.db` and nothing rejects the **live `moonpipe.db`** as a restore source | Low, but the only realistic one — `admin.settings.tsx:57-66` filter allows `.db`, and HANDOFF lines ~118/215 tell the user to "Backup `C:\ProgramData\MoonPipe\moonpipe.db`" | **Silent permanent loss** of recent un-checkpointed commits |
+| **H2** | High | Stage copies only the main file; a WAL-mode source loses its sidecar WAL. Validation runs *with* WAL replay but the swap copies *without* it | Same as H1 (hand-copied file) | Silent data loss |
+| **M1** | Med | `remove_stale_wal_files` ignores failures (`let _ =`), yet its own comment says a leftover old WAL would be **replayed into the fresh DB** | Very low (<1%) — a foreign `-wal` handle almost always implies a `moonpipe.db` handle too, and that path already fails safely | Split-brain corruption in theory |
+| **M2** | Med | If `open_pool` fails post-swap, `*guard` still holds the **closed** pool; `pre_restore_*.sqlite` exists as recovery but nothing says so | Low — realistic trigger is **disk full** (correlated with unbounded backup growth) | App dead until restart; recovery undocumented |
+| **M3** | Med | No migration-version guard — failures surface late at `open_pool`, post-swap | Low (same trigger as M2) | Confusing error, no corruption |
+| **M4** | Med | `app_settings` is in `REQUIRED_TABLES` (`:119`) so pre-`016` backups are rejected, while `:161-171` is written to handle exactly those — **dead branch** | Very low (needs a backup older than 2026-10-06; both on-disk files have `schema_cookie=66`) | Misleading error, not corruption |
+| **L1** | Low | `list_backups` does not call `require_admin` (export/import do) | Negligible (single machine, admin-only UI) | Info disclosure |
+| **L2** | Low | `timestamp()` is 1-second resolution → two snapshots in the same second overwrite | Negligible | One backup lost |
+| **L3** | Low | Pre-restore snapshot is best-effort (`log::warn` then continue) while retention purge then runs | Very low — if VACUUM is broken, retention's own snapshot also fails and the purge aborts | Self-limiting |
+| **L4** | Low | Unbounded backup growth (`PRE_DEPLOY_FIX_PLAN.md:21`) | Certain, but only disk space | **Already accepted out-of-scope by the user** |
+| **L5** | Low | `moonpipe.db.pre_018_backup` sits in `app_data_dir` but matches neither prefix → invisible in Settings | Already true | Harmless |
+| **L6** | Low | `PROJECT_ARCHITECTURE.md:517-519` documents commands that **do not exist** | Already true | Doc drift |
+| **L7** | Low | Dialog says "This cannot be undone" but `pre_restore_*.sqlite` *is* the undo | Already true | UX only |
+
+### 3. Separate finding — downgrade constraint (document, do NOT code)
+
+Migrations **016, 017, 018 were all added in `adf0a39` (2026-10-06)**, the commit immediately before the **1.1.0** bump (`baf1040`). So:
+
+- **1.0.0** (built 2026-09-22) embeds only migrations **≤ 015**.
+- **1.1.0 / 1.1.1 / 1.1.2** embed **016–018** ⇒ mutually restorable ✅
+
+sqlx 0.8.6 validates *every* applied migration on *every* `open_pool` (`sqlx-core-0.8.6/src/migrate/migrator.rs:28-45` → `MigrateError::VersionMissing`, `ignore_missing = false`), and `lib.rs:35-37` propagates it out of `setup` ⇒ **the app exits instead of launching.**
+
+**Consequence: the `Moon Pipe POS_1.0.0_x64-setup.exe` still in `target/release/bundle/` can never boot against the current DB. Never roll back below 1.1.0.** This is a general downgrade constraint, not a backup defect — it goes in the docs only.
+
+### 4. Decision
+
+**Option A — keep the manual "Choose backup file…" picker.** The client may have the backup on a USB and will not dig around in `C:\` for POS source files. Backend guards make the picker safe instead of removing it.
+
+---
+
+### 5. Backend — `src-tauri/src/commands/backup.rs` (bulk of the work)
+
+Refactor `import_database` (currently a monolithic L70-202) into thin orchestration over extracted helpers.
+
+**New operation order:**
+
+| # | Step | Status | Fixes |
+|---|---|---|---|
+| 1 | `require_admin(&app, auth_header)?` | unchanged | — |
+| 2 | `src.exists()` check | unchanged | — |
+| 3 | `ensure_not_live_db(&src, &config.db_path)?` — canonicalize both, `Path::eq_ignore_ascii_case`, reject with `AppError::Validation` | **NEW** | **H1** |
+| 4 | Stage copy: `src → stage` **plus `src-wal → stage-wal` and `src-shm → stage-shm` when present** | **EXTENDED** | **H2** |
+| 5 | `prepare_stage(&stage)?` — open stage **read-write**, `PRAGMA wal_checkpoint(TRUNCATE)`, then `PRAGMA journal_mode=DELETE` and **assert the returned value is `delete`**, close, `remove_stale_wal_files(&stage)?` | **NEW** | **H2** |
+| 6 | `validate_stage(&stage)?` — `integrity_check` → required tables (SQL built *from* `REQUIRED_TABLES`) → **migration-version guard** | **MOVED after 5 + EXTENDED** | **M3, M4** |
+| 7 | Pre-restore snapshot: `fs::create_dir_all` + `VACUUM INTO` — **now FATAL on failure** (live DB untouched at this point) | **CHANGED** | **L3** (and guarantees the file exists for step 10) |
+| 8 | Swap A: `holder.write()` → `old = clone` → `old.close()` → `remove_stale_wal_files(&db_path)?` **FATAL**; on `Err`: `open_pool(&config.db_path)`, install it, return `Err` (original file is still intact here) | **CHANGED** | **M1** |
+| 9 | Swap B: `fs::copy(stage → db_path)` (existing revive branch on `Err` unchanged) → `remove_stale_wal_files(&db_path)?` **FATAL + ROLLBACK** → `fs::remove_file(stage)` | **CHANGED** | **M1** |
+| 10 | `open_pool(&db_path)` — **Ok**: unchanged tail (`app_settings` ensure → install → drop guard → `emit_database_restored` → spawn retention + reconciliation). **Err**: **ROLLBACK** — copy `pre_restore_*.sqlite` → `db_path`, clear side files, `open_pool` again; success ⇒ install + return `Err("Restore failed and was rolled back to your previous data: {e}")`; failure ⇒ return `Err` **including the snapshot path** | **CHANGED** | **M2** |
+
+**Invariant to preserve:** `emit_database_restored` fires **only** on the true success path. Every failure and every rollback returns before it, so the UI never observes a database it did not receive.
+
+**Helpers to extract:**
+
+```rust
+fn   ensure_not_live_db(src: &Path, live: &Path) -> Result<(), AppError>        // H1
+async fn prepare_stage(stage: &Path) -> Result<(), AppError>                    // H2
+async fn validate_stage(stage: &Path) -> Result<(), AppError>                   // M3 + integrity/tables
+async fn remove_stale_wal_files(db_path: &Path) -> Result<(), String>           // M1 — SIGNATURE CHANGE
+async fn rollback_to_snapshot(db_path: &Path, snapshot: &Path)
+       -> Result<DbPool, String>                                                // M2
+```
+
+**Other edits in this file:**
+
+- **M4** — drop `app_settings` from `REQUIRED_TABLES` (L11-20, 8 → 7 entries). Unblocks the existing `CREATE TABLE IF NOT EXISTS app_settings` block at L161-171, which is currently unreachable. Build the `IN (…)` list **from `REQUIRED_TABLES` at runtime** so the constant and the SQL can never drift again (that drift is exactly what created M4):
+  ```rust
+  let placeholders = vec!["?"; REQUIRED_TABLES.len()].join(",");
+  let sql = format!("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ({placeholders})");
+  let mut q = sqlx::query_scalar::<_, String>(&sql);
+  for t in REQUIRED_TABLES { q = q.bind(t); }
+  ```
+- **M3 guard** — `sqlx::migrate!("./src/database/migrations").iter().map(|m| m.version).max()` (`Migrator::iter()` is `pub`, `migrator.rs:104`) vs `SELECT COALESCE(MAX(version),0) FROM _sqlx_migrations` on the stage. If stage > embedded → `AppError::Validation("Backup was created by a newer version of Moon Pipe POS (migration {n}) — update the app first")`.
+- **L1** — `list_backups(app, db, auth_header)` + `require_admin(&app, auth_header).await?;`
+- **L2** — `timestamp()` (L27) → `chrono::Utc::now().format("%Y%m%d_%H%M%S%.3f")`
+
+> 🔴 **F1 — the `auth_header` rename is LOAD-BEARING, not cosmetic.** The frontend sends `authHeader` (`api-client.ts:97`); Tauri maps Rust `auth_header` → `authHeader`. The current param is named **`_auth`**, which maps to `auth`, so **the token never arrives**. Renaming is mandatory — skip it and `require_admin` receives `None` and every `list_backups` call fails with *"Missing or invalid Authorization header"*, breaking Settings → Backups entirely. (`export_database:47` has the correct spelling and is the working reference.)
+
+### 6. Backend — `src-tauri/src/services/retention.rs:49`
+
+Same `%Y%m%d_%H%M%S%.3f` format, otherwise a retention snapshot and a user export can still collide within one second. Prefix/suffix unchanged ⇒ `list_backups` prefix matching (`:222`) is unaffected.
+
+### 7. Frontend — `src/routes/_authenticated/admin.settings.tsx`
+
+- **L7** — replace *"This cannot be undone"* (L180) with a pointer to the automatic `pre_restore_*.sqlite` snapshot in Settings → Backups as the undo path.
+- 🔴 **F2 — error state.** `backups.isError` currently falls through to *"No backups yet — create one above."* (L129-131), which is actively misleading. Add an `isError` branch with the message and a Retry that calls `resetCircuitBreaker("backups")`.
+
+  **Why it matters:** `api-client.ts:16-59` — one circuit breaker is shared by **all three** backup commands under `feature: "backups"`, `THRESHOLD = 5` failures / `TIMEOUT = 30_000`. Today `list_backups` never fails; after adding `require_admin` an expired token can fail it on page mount, and 5 failures would block **export and import too** for 30 s. `onSuccess` resets the counter, so a single stray failure is harmless — the danger is only repeated retries.
+
+### 8. Tests — 8 new in `backup.rs` `mod tests` (total **55 → ~63**)
+
+Existing two `remove_stale_wal_files` tests get the new `Result` signature.
+
+| Test | Proves |
+|---|---|
+| `remove_stale_wal_files_fails_when_side_file_cannot_be_deleted` | Make `x-wal` a **directory** so `remove_file` fails → assert `Err` (M1) |
+| `ensure_not_live_db_rejects_same_path_case_insensitively` | `MOONPIPE.DB` vs `moonpipe.db` → `Err` (H1) |
+| `ensure_not_live_db_allows_same_name_in_another_folder` | USB/backup copy with the same name → `Ok` (H1) |
+| `prepare_stage_folds_wal_sidecars_into_a_self_contained_file` | **The H2 proof.** `open_pool` a temp DB with `wal_autocheckpoint=0`, insert a row (lives only in `-wal`), copy **main + sidecars** to stage, run `prepare_stage` → assert header byte 18 == `1`, no `stage-wal`, and the row **is** readable. Fails without the fix |
+| `validate_stage_rejects_newer_migration_backup` | Fake `_sqlx_migrations` row at `max_version + 1` → `Err` containing "newer" (M3) |
+| `validate_stage_accepts_backup_without_app_settings` | Stage missing only `app_settings` → `Ok` (M4) |
+| `validate_stage_rejects_garbage_file` | Non-SQLite bytes → `Err` |
+| `validate_stage_rejects_unrelated_sqlite_db` | Valid SQLite, no MoonPipe tables → `Err` |
+
+Fixtures: `crate::database::open_pool(temp_path)` already runs real migrations + seed ⇒ genuine full-schema DB. Existing `connection.rs` scratch-DB tests prove this pattern works in `--lib` (never touches the live `DATABASE_URL`). Tests run in temp dirs only.
+
+### 9. Docs (Tier 3)
+
+| File | Change |
+|---|---|
+| `PROJECT_ARCHITECTURE.md:517-519` | Rows claim `create_backup` / `restore_backup` / `purge_old_invoices` + `apiClient.backup.*` — **none exist** → `export_database` / `import_database` / `list_backups` + `api.backups.export/import/list`; purge row → `services/retention.rs::purge_old_sales` (there is no purge command) |
+| `PROJECT_ARCHITECTURE.md:115` | `backup.rs # DB Snapshot, Restore & Purge Commands` → drop "Purge" |
+| `PROJECT_ARCHITECTURE.md:96` | `admin.settings.tsx` → "Backup & Restore Settings" (there is no retention UI) |
+| `HANDOFF.md` | This session block → implementation results, test count, gates, artifacts |
+| `HANDOFF.md` + `PROJECT_ARCHITECTURE.md` | **Downgrade warning** from §3 above: never roll back below 1.1.0 |
+| `PRE_DEPLOY_FIX_PLAN.md:148` | Gate 7c row → ✅ with the evidence from §1; status line at `:3` |
+
+All doc edits via the `edit` tool (**never `Set-Content -Encoding utf8`**), then verify UTF-8 / no BOM / 0 U+FFFD.
+
+### 10. Impact analysis (done 2026-10-08 — do not redo unless the code moves)
+
+**Complete consumer map — the entire change surface is 2 Rust files + 1 TSX file + 3 docs:**
+
+| Artifact | Consumers |
+|---|---|
+| `list_backups` | **1** — `admin.settings.tsx:48` via `api-client.ts:643` |
+| `export_database` / `import_database` | **1 each** — `admin.settings.tsx:52,69` |
+| `BackupInfo` | `api-client.ts:203` — **shape unchanged** |
+| Command registration | `lib.rs:133-135` — **names unchanged, no `lib.rs` edit** |
+| `remove_stale_wal_files` | 3 call sites in `backup.rs` + 2 tests (`:263`, `:285`) |
+| `REQUIRED_TABLES` | 1 use (`backup.rs:119`) |
+| `timestamp()` | 2 uses (`backup.rs:55`, `:127`) |
+| `moonpipe_backup_` prefix | **written by 2**: `backup.rs:55` *and* `retention.rs:48`; read by `backup.rs:222` |
+| `services/backup.rs` | **does not exist** (removed in cleanup Phase 5) |
+
+**Explicitly NOT impacted:**
+- v1.1.2 returns feature — zero file overlap; gates 1-6 must still pass unchanged
+- **Schema** — no migration files added ⇒ 1.1.2 stays mutually restorable with 1.1.0/1.1.1
+- **sqlx live-DB gate** — `backup.rs` contains **zero** `query!` macros (verified) ⇒ `.cargo/config.toml` / `DATABASE_URL` untouched, no `.sqlx` churn
+- Auth / JWT / roles / autostart / single-instance — and **F3**: `require_admin` is **JWT-only, no DB access** (`middleware.rs:8-12` → `validate_token`), so `list_backups` stays safe even while a restore swap holds the write lock
+- Existing on-disk backups remain restorable; eslint/tsc baselines unchanged (0/6 and 14)
+
+**Behaviour changes to watch:**
+- Restore now **refuses** when it cannot snapshot (L3) — new failure mode, but it fails *before* the swap, live DB untouched; `backups\` is the DB's own parent, so if the DB is writable so is it
+- Restore now **aborts** where it used to proceed (M1) — correct, proceeding was the corruption path
+- `list_backups` can now 401 ⇒ F2 error state + breaker
+- Backup filenames get ~3 ms digits longer (prefix/suffix unchanged, sorting uses `metadata.created`)
+
+**Residual risk NOT being fixed:** power loss during `fs::copy(stage → moonpipe.db)` leaves a truncated live DB (recovery = manual `pre_restore_*.sqlite`). Window ≈ ms for a ~230 KB file. Considered switching the swap to `fs::rename` (atomic replace) — **rejected**: larger change to proven, today-tested code. Raise it only if the user asks.
+
+### 11. Explicitly out of scope
+
+- **L4 backup file pruning** — accepted out-of-scope by the user (`PRE_DEPLOY_FIX_PLAN.md:21`)
+- **Option B** (removing the manual picker) — rejected, see §4
+- `services/returns.rs::process_return` dead code, `PROJECT_ARCHITECTURE.md` stale `returns`/`return_items` schema, `BEGIN IMMEDIATE` TOCTOU — all pre-existing and untouched
+- Gates **7b** (UI smoke) stays manual
+
+### 12. Gates (same framework, `PRE_DEPLOY_FIX_PLAN.md` §D)
+
+| Gate | Expect |
+|---|---|
+| 1. `cargo check --all-targets` | 0 errors |
+| 2. `cargo test --lib` | **~63 passed / 0 failed / 1 ignored** (baseline 55 / 0 / 1) |
+| 3. `cargo clippy --all-targets` | 0 errors, no new warnings (baseline 39) |
+| 4. `npm run lint` | 0 errors / 6 warnings |
+| 4b. `npx tsc --noEmit` | exactly 14 |
+| 5. `npx tauri build` | EXIT 0 — **replaces today's signed 1.1.2 artifacts** |
+| 6. `signtool sign` ×2 + `signtool verify /pa` ×2 | 0 errors / 0 warnings |
+| 7. Doc encoding check | UTF-8, no BOM, 0 U+FFFD |
+
+**Do NOT run `cargo fmt`** (repo is not rustfmt-clean). **No commits/pushes.**
+
+### 13. Execution order ~~for tomorrow~~ (✅ executed 2026-10-08, all steps done — see Results above)
+
+1. `commands/backup.rs` — extract the 5 helpers, wire the new 10-step order, M4 + L1 + L2
+2. `services/retention.rs:49` — ms timestamp
+3. Run gate 1 (`cargo check --all-targets`) immediately; fix
+4. Update the 2 existing tests, add the 8 new ones → gate 2
+5. Gate 3 (clippy)
+6. `admin.settings.tsx` — copy + `isError` + breaker reset → gates 4 / 4b
+7. Docs (§9) + turn this block into the implementation-results block
+8. Gates 5 → 6 → 7
+9. Hand the git commands to the user — **do not commit**
+
+---
+
+## 🧾 Session 2026-10-08 (release 1.1.2): Atomic multi-line returns
+
+**Status**: 🟢 **CODE + BUILD COMPLETE — awaiting install + manual verification.** Uncommitted at time of writing: `src-tauri/src/repositories/returns.rs`, `src-tauri/src/commands/returns.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/repositories/mod.rs`, `src-tauri/src/services/returns.rs`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src/lib/api-client.ts`, `src/features/returns/api.ts`, `src/routes/_authenticated/admin.returns.tsx`.
+
+### The problem
+
+`admin.returns.tsx` built an array of line payloads and drove `create_return` **once per line from the frontend**:
+
+```ts
+for (const p of payload) { await createReturn.mutateAsync(p); }   // old :95-97
+```
+
+Each call is its own IPC round-trip and its own SQLite transaction. A guard rejection, auth failure or dropped call on line 3 left lines 1–2 **already committed** — a permanent partial return with stock, ledger and profit all half-adjusted. The v1.1.1 hotfix removed the *most common* cause (the CHECK failure) but could not remove the structural one. It also cost `N` IPC round-trips, `3N` realtime events and ~`11N` `invalidateQueries()` batches per submission.
+
+### The design
+
+One new command becomes the primitive; the old single-line path delegates to it.
+
+```
+create_return(cmd)      ──► ReturnRepository::create()      ──► create_bulk(1 line)
+create_returns_bulk(cmd)──► ReturnRepository::create_bulk() ──► ONE tx, N lines
+```
+
+`create_bulk` flow, all inside a single `pool.begin()` transaction:
+
+1. **Pre-validate before opening the tx** — non-empty `lines`, every `quantity >= 1`, every `unit_price >= 0`.
+2. Per line: `line_total = quantity * unit_price` (server-derived) → over-return guard → `INSERT returns` → `UPDATE products` → read invoice → discount proration → `UPDATE invoices` → accumulate `total_reduction` + `customer_id`.
+3. **After** the loop: one `propagate_carry_forward(&mut tx, invoice_id, total_reduction)` + one `reconcile_customer(&mut tx, cid)`.
+4. `commit` → return the created rows.
+
+Any step failing anywhere drops the transaction ⇒ **zero rows, zero stock change, zero ledger change.**
+
+### Why "once at the end" is provably identical to "once per line"
+
+- `saturating_sub` / `.min()` are order-independent, so `new_subtotal`/`new_paid` chain identically either way.
+- `reduction = old_due − new_due` **telescopes**: `Σ(old − new) = due₀ − due_final`. Feeding the sum to `propagate_carry_forward` is the same as feeding each term — with `N` chain walks collapsed to **1**.
+- `reconcile_customer` recomputes from the leaf invoices, so running it once yields the same value as running it `N` times.
+- The over-return guard reads through *this* transaction, so a line earlier in the loop **is** visible to a later line — duplicate-product lines are handled correctly.
+
+Pinned numerically by `bulk_return_matches_n_sequential_single_returns`: `disc_back = 1000*3000/11000 = 272` then `728*1000/8000 = 91` ⇒ final `7000 / 637 / 6363` on **both** paths.
+
+### Changes
+
+| File | Change |
+|---|---|
+| `src-tauri/src/repositories/returns.rs` | Added `CreateReturnLineInput` + `CreateReturnsInput`; **`line_total` removed from `CreateReturnInput`**; new `create_bulk()`; `create()` is now a thin 1-line delegate |
+| `src-tauri/src/commands/returns.rs` | `CreateReturnInputCmd` minus `line_total`; new `CreateReturnLineInputCmd`, `CreateReturnsBulkInput`, `#[tauri::command] create_returns_bulk` (auth + `get_current_user` + 3 emits, all **once**) |
+| `src-tauri/src/lib.rs` | Registered `commands::returns::create_returns_bulk` in `generate_handler!` |
+| `src-tauri/src/repositories/mod.rs:15` | Re-exports `CreateReturnsInput`, `CreateReturnLineInput` |
+| `src-tauri/src/services/returns.rs` | Dropped the `line_total` param — **this wrapper has no callers** (dead code), so the change is inert |
+| `src/lib/api-client.ts` | `ReturnsApi.createBulk`, impl calling `create_returns_bulk`, new `CreateReturnLineInput` / `CreateReturnsBulkInput` |
+| `src/features/returns/api.ts` | `useCreateReturnsBulk()`; shared `invalidateAfterReturn()` (same 5 keys as before); `line_total` dropped from the request type |
+| `src/routes/_authenticated/admin.returns.tsx` | Loop replaced by one `bulkReturn.mutateAsync({ invoice_id, reason, lines })`; payload no longer carries `line_total`. Pre-validation unchanged |
+
+### Blast radius (audited, all clear)
+
+| Area | Verdict |
+|---|---|
+| Migration / schema / CHECK 015 | **untouched — no migration** |
+| `create_return` command | signature unchanged; still works; existing callers/tests unaffected |
+| `reports.rs` return-profit math, `returns.line_total` readers | reads stored value, which the server now computes — same formula |
+| print / PDF / receipt / Excel / backup / restore / retention | untouched |
+| **suppliers** | separate table, no purchase-return path — untouched |
+| Realtime events | ~`3N` → **3**; frontend invalidations ~`11N` → **~11** (`route.tsx:14-34` listener) |
+| SQLite locking | `N` write transactions → **1**; shorter exclusive window. `busy_timeout = 5000` kept (`connection.rs:61`) |
+| Rollback | additive command ⇒ reinstalling 1.1.1 works; 1.1.1 also remains the rollback target for this release |
+
+### Explicitly NOT done (deliberate)
+
+- **`BEGIN IMMEDIATE`** — the pre-existing deferred-transaction TOCTOU on the over-return guard is unchanged. Safe in practice (guard reads its own tx), flagged as a possible follow-up only.
+- **`unit_price` still comes from the client.** The server now derives `line_total` from it, but does not re-read `unit_price` from `invoice_items`. Stricter validation belongs in its own change.
+- **`PROJECT_ARCHITECTURE.md` §3 schema listing for `returns`/`return_items` is stale** (pre-existing drift, unrelated to this release).
+- Gates **7b** (UI smoke) and **7c** (backup→restore end-to-end) remain manual.
+
+### New tests (5 — total now **55 / 0 / 1**; shared `test_support.rs` untouched)
+
+| Test | Covers |
+|---|---|
+| `bulk_return_is_all_or_nothing` | line 2 over-returns after line 1 succeeded ⇒ **0 rows, invoice unchanged**; then a payload with `"line_total": 999999` is accepted by serde but the stored value is still `quantity * unit_price` |
+| `bulk_return_matches_n_sequential_single_returns` | one bulk call vs two legacy calls on identical invoices ⇒ identical invoice rows, balances and normalized return rows; final `7000 / 637 / 6363` pinned by hand |
+| `bulk_return_on_a_discounted_carried_invoice_propagates_once` | 9000 reduction propagated **once** — successor `previous_balance 9000 → 0`, balance `1000 == expected_leaf_balance`, and `reconcile_balances` does not move it |
+| `bulk_return_with_duplicate_product_lines_respects_the_guard` | `2 + 2 > 3` ⇒ rejected **and rolled back**; `2 + 1 <= 3` ⇒ both rows land |
+| `empty_bulk_return_is_rejected` | `[]`, `quantity 0`, `unit_price -100` all rejected **before** the transaction opens |
+
+### Gates — all green
+
+| Gate | Result | Baseline |
+|---|---|---|
+| `cargo check --all-targets` | 0 errors, 34 warnings | same |
+| `cargo test --lib` | **55 passed / 0 failed / 1 ignored** | 50 / 0 / 1 |
+| `cargo clippy --all-targets` | **39 warnings, 0 errors** | 39 |
+| `npm run lint` | **0 errors / 6 warnings**, exit 0 | same |
+| `npx tsc --noEmit` | **14 errors** (accepted; `admin.returns.tsx` clean) | 14 |
+| `npx tauri build` | EXIT 0, 5m55s (vite ✓ 16.75s) | — |
+| `signtool sign` ×2 | 0 errors | — |
+| `signtool verify /pa` ×2 | **Successfully verified**, 0 errors / 0 warnings, `AZ Solutions`, DigiCert timestamp | — |
+
+### Artifacts (both signed)
+
+- `src-tauri/target/release/bundle/msi/Moon Pipe POS_1.1.2_x64_en-US.msi` (9,904,128 bytes)
+- `src-tauri/target/release/bundle/nsis/Moon Pipe POS_1.1.2_x64-setup.exe` (7,312,120 bytes)
+
+### Still to run by hand
+
+1. **Backup** `C:\ProgramData\MoonPipe\moonpipe.db` first.
+2. Install **1.1.1**, verify, then install **1.1.2** over it (publisher **AZ Solutions**, file version **1.1.2**).
+3. Multi-line return on **≥ 2 products** in one submission → all lines appear in *Recent returns*, stock restored for both, sale total reduced by the sum, Dashboard == Reports.
+4. **Negative test:** over-enter a quantity on one line → error toast, and *nothing* is recorded for *any* line (this is the behaviour the old loop could not deliver).
+5. Multi-line return on a **discounted** invoice → no CHECK error, invoice ends `subtotal >= discount`, identity `total == subtotal - discount + previous_balance` holds.
+6. Multi-line return on an invoice whose balance was **carried forward** → successor invoice shrinks, balance still equals `expected_leaf_balance`.
+7. One backup → restore → `PRAGMA journal_mode = wal` + `integrity_check = ok`. Then **gates 7b / 7c** from `PRE_DEPLOY_FIX_PLAN.md` §D.
+
+### Rollback
+
+Reinstall `Moon Pipe POS_1.1.1_x64-setup.exe` (still in `target/release/bundle/`). Additive command + **no migration** ⇒ no data repair; rows written by 1.1.2 are ordinary rows and stay valid under 1.1.1.
+
+---
+
+## 🩹 Session 2026-10-08: v1.1.1 HOTFIX — returns crash on discounted invoices
+
+**Status**: 🟢 **CODE + BUILD COMPLETE — awaiting install + live repro on the customer machine.** Uncommitted at time of writing: `src-tauri/src/repositories/returns.rs`, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock` (version 1.1.1).
+
+### The production bug
+
+Customer ran a return from the Returns module on a discounted invoice and got:
+
+```
+Database error: error returned from database: (code:275) CHECK constraint failed: discount >= 0 AND discount <= subtotal
+```
+
+- `code:275` = `SQLITE_CONSTRAINT`. The **transaction rolled back** — no partial return, no stock restored, **no data corruption**.
+- The rule comes from `src-tauri/src/database/migrations/015_add_invoice_constraints.sql:22` (`CHECK (discount <= subtotal)`).
+- Root cause: `repositories/returns.rs` shrank `subtotal` and `total` on a return but **never touched `discount`**. Trigger condition: `line_total > subtotal - discount`.
+- **On the live DB this is a 100% repro on any single-line invoice with a discount** — returning the only line drives `subtotal` to 0 while `discount` survives. Candidates: `INV-2026-0007`, `INV-2026-0008`, `INV-2026-0019` (each `subtotal 3500 / discount 300|500`, one Bottle Trap @3500). 5 invoices carry a discount; 0 rows violated the CHECK; 0 of the 11 existing returns sat on a discounted invoice.
+- Second, **silent** bug behind it: `new_total = total - line_total` credited the **gross** line value, while the customer had only paid net-of-discount. `commands/reports.rs:125` already values returns at `line_total * (subtotal - discount) / subtotal` — ledger and Reports disagreed by the discount slice.
+
+### The fix — floor proration, backend only
+
+`src-tauri/src/repositories/returns.rs` (the only source file changed):
+
+```rust
+let sub = inv.subtotal;
+let disc_back = if sub > 0 { inv.discount * input.line_total / sub } else { inv.discount }; // floor
+let new_subtotal = (sub - input.line_total).max(0);
+let new_discount = (inv.discount - disc_back).max(0).min(new_subtotal);   // hard backstop
+let new_total    = new_subtotal - new_discount + inv.previous_balance;
+```
+
+`UPDATE invoices` now also writes `discount`. SELECT gained `discount` + `previous_balance`.
+
+**Why it cannot regress anything:**
+1. **`discount == 0` is byte-identical to the old arithmetic** — `disc_back = 0`, `new_total = (sub - line) + prev_bal`, and `total == sub + prev_bal` holds on **all 22 live rows** (verified). All 7 pre-existing return tests pass unchanged.
+2. **CHECK holds by construction:** with `K = sub - discount ≥ 0`, `new_discount - new_subtotal = ceil(K·line/sub) - K ≤ 0`; `.min(new_subtotal)` is a belt-and-braces backstop.
+3. **Reports now agree with the ledger:** the credit equals `line - floor(discount·line/sub)`, the same net figure `reports.rs` uses.
+
+### Blast radius (audited, all clear)
+
+| Area | Verdict |
+|---|---|
+| `commands/invoices.rs:84-95` insert validation | untouched |
+| `invoices.rs:415 propagate_carry_forward` | reads successor subtotal/discount, **never writes them** — receives a now-correct net reduction |
+| `services/reconciliation.rs` | only `SUM(total - amount_paid)` + `carried_to` relinking — **never rewrites subtotal/discount/total**, so startup reconcile and backup-restore cannot undo the fix |
+| print / PDF / receipt / `admin.reports.tsx:107` / `admin.invoices.$invoiceId.tsx:196` | render current values → prorated discount is correct |
+| backup / restore / retention | file-level, no column knowledge |
+| **suppliers** | separate table + separate CHECK; no purchase-return path exists → untouched |
+| `admin.returns.tsx` | **no change** — "Return value" is goods value, not credit issued |
+
+### Explicitly NOT done (deliberate, for blast-radius control)
+- **No migration** — the CHECK stays; it is a correct guard.
+- **No frontend change.**
+- **No `.sqlx` regeneration** — `src-tauri/.cargo/config.toml` sets `DATABASE_URL` to the live DB and `SQLX_OFFLINE` is unset, so macros validate against the real schema. The orphaned cache entry for the old UPDATE is inert. *If `SQLX_OFFLINE=true` is ever set, re-run `cargo sqlx prepare`.*
+- **Multi-line returns are still not atomic** — `admin.returns.tsx:95-97` fires one `create_return` per line in a loop. This fix removes the CHECK failure that stranded partial returns, but a mid-loop auth/network failure still could. **Follow-up, out of hotfix scope.**
+
+### New tests (3, all inside `returns.rs` `mod tests`; shared `test_support.rs` untouched)
+| Test | Covers |
+|---|---|
+| `full_return_of_the_only_line_on_a_discounted_invoice_clears_it` | **the customer's exact bug** — 3500/300/3200 invoice, return the line → row must end `0/0/0` |
+| `partial_return_prorates_the_discount_and_matches_reports` | 10000/1000 → return 3000 ⇒ `7000 / 700 / 6300`, identity holds, credit `2700 == 3000*9000/10000` |
+| `returns_on_a_discounted_invoice_never_trip_the_check` | drains a 7-line invoice step by step; every step must be `Ok` |
+
+Plus a local `discounted_invoice()` helper (test_support keeps its `discount: 0` contract for the other 40+ tests).
+
+### Gates — all green
+
+| Gate | Result | Baseline |
+|---|---|---|
+| `cargo check --all-targets` | 0 errors, 34 warnings | same |
+| `cargo test --lib` | **50 passed / 0 failed / 1 ignored** | 47 / 0 / 1 |
+| `cargo clippy --all-targets` | **39 warnings, 0 errors** | 39 |
+| `npm run lint` | **0 errors / 6 warnings**, exit 0 | same |
+| `npx tsc --noEmit` | **14 errors** (accepted) | 14 |
+| `npx vite build --config vite.config.spa.ts` | ✓ 15.8s | ✓ |
+| `npx tauri build` | EXIT 0, 5m38s | — |
+| `signtool sign` ×2 | 0 errors | — |
+| `signtool verify /pa` ×2 | **Successfully verified**, PS Status **Valid**, `CN=AZ Solutions` | — |
+
+### Artifacts (both signed, `signtool verify /pa` = Valid)
+- `src-tauri/target/release/bundle/msi/Moon Pipe POS_1.1.1_x64_en-US.msi` (9,887,744 bytes)
+- `src-tauri/target/release/bundle/nsis/Moon Pipe POS_1.1.1_x64-setup.exe` (7,318,608 bytes)
+
+### Still to run by hand
+1. **Backup** `C:\ProgramData\MoonPipe\moonpipe.db` before installing.
+2. Install `Moon Pipe POS_1.1.1_x64-setup.exe` (publisher shows **AZ Solutions**); confirm file version **1.1.1**.
+3. **Live repro:** on `INV-2026-0007` (or `0008` / `0019`) return the single Bottle Trap → must succeed; invoice row must read `subtotal 0 / discount 0 / total 0`.
+4. Regression sweep: create a sale **with a discount** → partial-return one line → Dashboard "Sales today" == Reports "Today" → Excel export has the **NET SALES** row → one backup → restore → `PRAGMA journal_mode = wal` + `integrity_check = ok`.
+5. Still-open from 2026-10-06: **gate 7b** (5-point UI checklist) and **gate 7c** (backup→restore end-to-end) against an installed build.
+
+### Rollback
+Reinstall `Moon Pipe POS_1.1.0_x64-setup.exe` (still in `target/release/bundle/`). Backend-only + no migration means **no data repair**; rows written by 1.1.1 satisfy every CHECK, so they stay valid under 1.1.0.
 
 ---
 

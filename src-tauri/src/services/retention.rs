@@ -44,9 +44,11 @@ pub async fn purge_old_sales(pool: &DbPool) -> Result<u64, AppError> {
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| AppError::Internal(format!("Retention backup failed: {}", e)))?;
+    // Millisecond suffix (L2): a retention snapshot and a user export can land
+    // in the same second and would otherwise silently overwrite each other.
     let snapshot = dir.join(format!(
         "moonpipe_backup_{}.sqlite",
-        chrono::Utc::now().format("%Y%m%d_%H%M%S")
+        chrono::Utc::now().format("%Y%m%d_%H%M%S%.3f")
     ));
     let _ = tokio::fs::remove_file(&snapshot).await; // VACUUM INTO requires the target not to exist
 

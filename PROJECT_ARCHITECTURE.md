@@ -44,7 +44,7 @@
 | **Receipt Rasterizer** | Monochrome Bitmap Generator (`ab_glyph` + `GS v 0`) | [src-tauri/src/services/receipt_bitmap.rs](src-tauri/src/services/receipt_bitmap.rs) |
 | **Printer Transport** | Windows Spooler RAW API + Direct USB (`rusb`) | [src-tauri/src/services/print.rs](src-tauri/src/services/print.rs) |
 | **PDF Engine** | `genpdf` with embedded DejaVuSans TTF fonts | [src-tauri/src/services/invoice_pdf.rs](src-tauri/src/services/invoice_pdf.rs) |
-| **Release** | `cargo tauri build` (vite SPA → `dist-spa` → `custom-protocol` → WiX MSI + makensis NSIS), signed post-build — **v1.1.0** | [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) |
+| **Release** | `cargo tauri build` (vite SPA → `dist-spa` → `custom-protocol` → WiX MSI + makensis NSIS), signed post-build — **v1.1.2** | [src-tauri/tauri.conf.json](src-tauri/tauri.conf.json) |
 
 ---
 
@@ -93,7 +93,7 @@ moonpipe-pos-main/
 │           ├── admin.reports.tsx                # Sales Reports & Excel Exports
 │           ├── admin.cashiers.tsx               # Staff & Cashier Account Approvals
 │           ├── admin.suppliers.tsx              # Supplier Directory & Purchase Ledger
-│           └── admin.settings.tsx               # Database Backup, Restore, Retention Settings
+│           └── admin.settings.tsx               # Backup & Restore Settings
 ├── signing-cert.pfx                             # Self-signed code signing cert (CN=AZ Solutions) — GITIGNORED, repo root only
 └── src-tauri/                                   # BACKEND (Rust & Tauri Shell)
     ├── tauri.conf.json                          # Tauri App Config & Window Parameters
@@ -112,7 +112,7 @@ moonpipe-pos-main/
         │   ├── returns.rs                       # Return Creation & Queries
         │   ├── reports.rs                       # Sales & Inventory Reporting Queries
         │   ├── print.rs                         # Thermal Receipt & PDF Invoice Commands
-        │   ├── backup.rs                        # DB Snapshot, Restore & Purge Commands
+        │   ├── backup.rs                        # DB Snapshot & Restore Commands (admin-gated)
         │   ├── cashiers.rs                      # Staff Approval & Cashier Admin Queries
         │   ├── suppliers.rs                     # Supplier CRUD & Purchase Ledger Commands
         │   ├── reconciliation.rs                # Balance Reconciliation Command
@@ -120,6 +120,10 @@ moonpipe-pos-main/
         ├── database/                            # Database Infrastructure
         │   ├── connection.rs                    # SqlitePool Connection & Path Resolver
         │   └── migrations/                      # Embedded SQL Migrations (IMMUTABLE!)
+        │       # ⚠️ DOWNGRADE RULE: migrations 016-018 shipped in v1.1.0. sqlx validates every
+        │       # applied migration on every open_pool — a build that lacks a migration the DB has
+        │       # (e.g. the old 1.0.0 installer) exits instead of launching. NEVER roll the app
+        │       # back below 1.1.0. 1.1.0/1.1.1/1.1.2 are mutually restorable.
         │       ├── 001_initial_schema.sql       # Schema Tables, Enums, Indexes
         │       ├── 002_enum_constraints.sql     # Category & Status CHECK Constraints
         │       ├── 003_invoice_counter.sql      # Invoice Sequence Generator
@@ -413,26 +417,39 @@ CREATE UNIQUE INDEX idx_app_settings_key ON app_settings(key);
 [User submits Return in /admin/returns]
         │
         ▼
-[IPC Call: create_return(input)] ──► [ReturnRepository::create]
-                                           │
-                     ┌─────────────────────┴─────────────────────┐
-                     │ In-Transaction Execution                  │
-                     │ 1. Create `returns` & `return_items`      │
-                     │ 2. UPDATE products SET stock_qty + qty    │
-                     │ 3. Adjust `invoices.total` & `amount_paid`│
-                     │    + cascade the reduction forward through│
-                     │    `carried_to_invoice_id` successors     │
-                     │    (depth-capped walk)                    │
-                     │ 4. Recompute customer outstanding_balance │
-                     │    from LEAF invoices (never `+=` nudge)  │
-                     └─────────────────────┬─────────────────────┘
-                                           │
-                     ┌─────────────────────┴─────────────────────┐
-                     │ Emit Events                               │
-                     │ 1. `invoices_changed`                     │
-                     │ 2. `inventory_changed`                    │
-                     └───────────────────────────────────────────┘
+[IPC: create_returns_bulk({ invoice_id, reason, lines[] })]
+        │        a 1-line return still goes through
+        │        create_return → create() → create_bulk([one line])
+        ▼
+[ReturnRepository::create_bulk]   ──   ONE SQLite transaction
+        │
+        ├─ BEFORE the transaction opens
+        │    · lines must be non-empty
+        │    · every quantity >= 1, unit_price >= 0
+        │
+        ├─ PER LINE (inside the transaction)
+        │    1. line_total = quantity * unit_price   <- server-derived, never from the client
+        │    2. over-return guard (reads this same tx, so duplicate lines are safe)
+        │    3. INSERT into `returns`
+        │    4. UPDATE products SET stock_qty = stock_qty + quantity
+        │    5. read invoice -> prorate discount -> UPDATE invoices
+        │         (subtotal, discount, total, amount_paid)
+        │    6. accumulate total_reduction
+        │
+        ├─ AFTER THE LAST LINE (still the same transaction)
+        │    A. propagate_carry_forward(invoice_id, total_reduction)  <- ONCE, not N times
+        │    B. reconcile_customer(customer_id)                       <- from LEAF invoices
+        │    C. commit          <- any failure above means full rollback: NOTHING was written
+        │
+        ▼
+[Emit Events -- ONCE per submission, not per line]
+        1. invoices_changed
+        2. products_changed
+        3. customers_changed
 ```
+
+> See invariant **13** below: a multi-line return is all-or-nothing, and `line_total`
+> is never accepted from the client.
 
 ### D. Supplier Purchase Recording & Balance Tracking
 
@@ -499,10 +516,12 @@ The frontend interacts with Rust backend commands exclusively through `apiInvoke
 | **Invoices** | `get_invoice` | `commands/invoices.rs` | `apiClient.invoices.get` | Returns invoice master details + line items |
 | **Print** | `print_receipt` | `commands/print.rs` | `apiClient.invoices.printReceipt` | Generates raster receipt bitmap and prints via Spooler/USB |
 | **Print** | `print_invoice_pdf` | `commands/print.rs` | `apiClient.invoices.printInvoicePdf` | Generates A4 PDF invoice file and returns file path |
-| **Returns** | `create_return` | `commands/returns.rs` | `apiClient.returns.create` | Processes return, restores stock, adjusts customer balance |
-| **Backup** | `create_backup` | `commands/backup.rs` | `apiClient.backup.create` | Runs `VACUUM INTO` live SQLite snapshot |
-| **Backup** | `restore_backup` | `commands/backup.rs` | `apiClient.backup.restore` | Validates DB, creates pre-restore snapshot, restores DB |
-| **Backup** | `purge_old_invoices` | `commands/backup.rs` | `apiClient.backup.purge` | Purges settled invoices older than 12 months with snapshot |
+| **Returns** | `create_return` | `commands/returns.rs` | `apiClient.returns.create` | Processes one returned line, restores stock, adjusts customer balance |
+| **Returns** | `create_returns_bulk` | `commands/returns.rs` | `apiClient.returns.createBulk` | Submits N lines in **one** transaction (all-or-nothing): restores stock, adjusts the invoice ledger and balance, emits its 3 events once |
+| **Backup** | `export_database` | `commands/backup.rs` | `api.backups.export` | Runs `VACUUM INTO` live SQLite snapshot into `%PROGRAMDATA%\MoonPipe\backups\` (ms-resolution filename) |
+| **Backup** | `import_database` | `commands/backup.rs` | `api.backups.import` | 10-step hardened restore: live-DB guard, WAL sidecar staging, migration-version check, fatal pre-restore snapshot, rollback on failure |
+| **Backup** | `list_backups` | `commands/backup.rs` | `api.backups.list` | Admin-gated listing of `moonpipe_backup_*` + `pre_restore_*` snapshots |
+| **Retention** | — (no command) | `services/retention.rs::purge_old_sales` | — (runs at startup + after restore) | Purges settled invoices older than 12 months, snapshotting first |
 | **Suppliers** | `list_suppliers` | `commands/suppliers.rs` | `apiClient.suppliers.list` | Lists all suppliers ordered by name |
 | **Suppliers** | `get_supplier` | `commands/suppliers.rs` | `apiClient.suppliers.get` | Returns single supplier by ID |
 | **Suppliers** | `create_supplier` | `commands/suppliers.rs` | `apiClient.suppliers.create` | Creates new supplier with outstanding_balance=0 |
@@ -562,9 +581,24 @@ The frontend interacts with Rust backend commands exclusively through `apiInvoke
 
 > [!IMPORTANT]
 > **10. Release Build — `cargo tauri build`, never bare `cargo build`**
-> The shippable artifacts come from `cargo tauri build` (or `npx tauri build`), which runs `beforeBuildCommand` (`npx vite build --config vite.config.spa.ts` → `dist-spa/`), then compiles with the **`custom-protocol` feature**, then bundles WiX (MSI) + makensis (NSIS). Version is declared in **two** places that must match: `src-tauri/tauri.conf.json` (drives the installer filename and app version) and `src-tauri/Cargo.toml` (drives the exe/file version). Current release: **1.1.0** → `src-tauri/target/release/bundle/msi/Moon Pipe POS_1.1.0_x64_en-US.msi` and `.../nsis/Moon Pipe POS_1.1.0_x64-setup.exe`. Test/lint gates before any build: `cargo test --lib`, `npm run lint`, `npx tsc --noEmit`.
+> The shippable artifacts come from `cargo tauri build` (or `npx tauri build`), which runs `beforeBuildCommand` (`npx vite build --config vite.config.spa.ts` → `dist-spa/`), then compiles with the **`custom-protocol` feature**, then bundles WiX (MSI) + makensis (NSIS). Version is declared in **two** places that must match: `src-tauri/tauri.conf.json` (drives the installer filename and app version) and `src-tauri/Cargo.toml` (drives the exe/file version). Current release: **1.1.2** → `src-tauri/target/release/bundle/msi/Moon Pipe POS_1.1.2_x64_en-US.msi` and `.../nsis/Moon Pipe POS_1.1.2_x64-setup.exe`. Test/lint gates before any build: `cargo test --lib` (55 passed / 0 failed / 1 ignored), `npm run lint` (0 errors), `npx tsc --noEmit` (14 = accepted baseline).
 
 > [!CAUTION]
 > **11. Debug Build Traps — localhost:8080 and the vanishing console**
 > **(a) URL:** `tauri/build.rs` computes `dev = !custom_protocol`, and `tauri-2.11.5` `manager/mod.rs` does `#[cfg(dev)] let url = self.config.build.dev_url`. A binary from a bare `cargo build` **or `cargo build --release`** has `custom-protocol` off → `cfg(dev)` on → the webview loads `devUrl` (`http://localhost:8080`) and **never falls back to `frontendDist`**, producing `ERR_CONNECTION_REFUSED` unless `npx vite --config vite.config.spa.ts --port 8080` (the `beforeDevCommand`) is running. Only `cargo tauri build` flips the feature; the shipped exe needs no server.
 > **(b) Console:** `src-tauri/src/main.rs:2` is `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`, so **debug** builds are console apps — closing their CMD window sends `CTRL_CLOSE_EVENT` and terminates the POS. Release builds allocate no console. Logs always land in `AppData\Local\com.moonpipe.pos\logs\Moon Pipe POS.log`.
+
+> [!IMPORTANT]
+> **12. Returns Must Prorate the Invoice Discount (v1.1.1 hotfix)**
+> Migration 015 enforces `CHECK (discount <= subtotal)` on `invoices`. A return therefore **must** shrink `discount` in lockstep with `subtotal` — subtracting `line_total` from `subtotal` alone throws `CHECK constraint failed: discount >= 0 AND discount <= subtotal` (SQLite `code:275`) and rolls the whole transaction back. That is exactly what shipped in 1.1.0 and broke returns on every single-line discounted invoice. The rule, in `src-tauri/src/repositories/returns.rs::create_bulk` (which `create` delegates to):
+> ```rust
+> let disc_back = if sub > 0 { inv.discount * line_total / sub } else { inv.discount }; // FLOOR
+> let new_subtotal = (sub - line_total).max(0);
+> let new_discount = (inv.discount - disc_back).max(0).min(new_subtotal);
+> let new_total    = new_subtotal - new_discount + inv.previous_balance;
+> ```
+> **Why floor:** it is the integer division `commands/reports.rs` already uses to value returns (`line_total * (subtotal - discount) / subtotal`), so the ledger and Reports agree to the rupee. **Why it is safe:** with `K = sub - discount ≥ 0` and `line ≤ sub`, `new_discount - new_subtotal = ceil(K·line/sub) - K ≤ 0`, so the CHECK holds by construction (`.min(new_subtotal)` is a backstop); and when `discount == 0` the arithmetic collapses to the previous behaviour byte-for-byte, so no existing invoice or test changes. It also preserves the ratio `(subtotal - discount) / subtotal`, which every profit query depends on. Never write `UPDATE invoices SET subtotal = ...` without deciding what happens to `discount`.
+
+> [!IMPORTANT]
+> **13. Returns Are Submitted as One Transaction (v1.1.2)**
+> A return with several lines is **all-or-nothing**. `create_return` (single line) and `create_returns_bulk` (N lines) both land in `ReturnRepository::create_bulk`, which opens **one** `pool.begin()` transaction, applies every line, runs `propagate_carry_forward` **once** with the summed reduction plus **one** `reconcile_customer`, then commits. Any failure anywhere drops the transaction ⇒ no rows, no stock change, no ledger change. The old frontend loop (`for (const p of payload) await createReturn.mutateAsync(p)`) fired one IPC + one transaction per line, so a rejection on line 3 stranded lines 1–2 as a permanent partial return. **Why once-at-the-end ≡ once-per-line:** `saturating_sub`/`.min()` are order-independent; `reduction = old_due - new_due` telescopes, so `Σ(old − new) = due₀ − due_final` (one chain walk instead of `N`); `reconcile_customer` re-derives from leaf invoices, so its result is idempotent. **`line_total` is never accepted from the client** — the request types (`CreateReturnLineInput`, `CreateReturnsBulkInput` in `src-tauri/src/commands/returns.rs` and their TS mirrors in `src/lib/api-client.ts`) do not carry it, and the server computes `quantity * unit_price`, so a tampered payload cannot overstate the credit. Validation (non-empty lines, `quantity >= 1`, `unit_price >= 0`) runs **before** the transaction opens. No migration — CHECK 015 and every column are unchanged.

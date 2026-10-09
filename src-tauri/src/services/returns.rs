@@ -11,7 +11,6 @@ pub async fn process_return(
     quantity: i64,
     unit: String,
     unit_price: i64,
-    line_total: i64,
     reason: String,
     processed_by: String,
 ) -> Result<crate::repositories::returns::Return, AppError> {
@@ -23,7 +22,6 @@ pub async fn process_return(
         quantity,
         unit,
         unit_price,
-        line_total,
         reason,
         processed_by,
     }).await

@@ -16,7 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { api, type BackupInfo } from "@/lib/api-client";
+import { api, resetCircuitBreaker, type BackupInfo } from "@/lib/api-client";
 import { formatDate } from "@/features/invoices/api";
 
 export const Route = createFileRoute("/_authenticated/admin/settings")({
@@ -126,6 +126,25 @@ function SettingsPage() {
         </div>
         {backups.isLoading ? (
           <p className="px-5 py-6 text-sm text-muted-foreground">Loading…</p>
+        ) : backups.isError ? (
+          // A failed list must not masquerade as "no backups yet" — surface it
+          // and clear the circuit breaker before retrying.
+          <div className="px-5 py-6">
+            <p className="text-sm text-destructive">
+              Could not load the backups list: {(backups.error as Error).message}
+            </p>
+            <Button
+              className="mt-3"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                resetCircuitBreaker("backups");
+                void backups.refetch();
+              }}
+            >
+              Retry
+            </Button>
+          </div>
         ) : (backups.data ?? []).length === 0 ? (
           <p className="px-5 py-6 text-sm text-muted-foreground">
             No backups yet — create one above.
@@ -177,7 +196,10 @@ function SettingsPage() {
               <span className="font-semibold text-destructive">
                 permanently replace every invoice, product, customer and user account
               </span>{" "}
-              in the live database with the contents of this backup. This cannot be undone.
+              in the live database with the contents of this backup. A{" "}
+              <span className="font-medium text-foreground">pre_restore snapshot</span> of your
+              current data is saved to the backups list first, so this can be rolled back from this
+              page.
               {"\n\n"}Are you sure you want to continue?
             </AlertDialogDescription>
           </AlertDialogHeader>

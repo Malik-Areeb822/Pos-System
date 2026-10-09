@@ -1,6 +1,6 @@
 # Moon Pipe POS — Pre-Deployment Fix Plan
 
-Status: **IMPLEMENTED (2026-10-06)** — Phase 1 ✅, Phase 2 (2.1–2.7) ✅, Phase 3 ✅, Phase 4 ✅. Gates 1–6 clean, gate 7 WAL smoke clean. Remaining: 4 manual UI smoke checks + a full restore end-to-end (see D below). See HANDOFF.md session 2026-10-06.
+Status: **IMPLEMENTED (2026-10-06)** — Phase 1 ✅, Phase 2 (2.1–2.7) ✅, Phase 3 ✅, Phase 4 ✅. Gates 1–6 clean, gate 7 WAL smoke clean. Remaining: 4 manual UI smoke checks (see D below; 7c restore end-to-end ✅ run 2026-10-08). See HANDOFF.md session 2026-10-06.
 Scope decisions (user-confirmed): critical fixes + cheap hardening only.
 No UI pagination/virtualization. No backup pruning.
 Phone matching = trimmed, not digit-normalized.
@@ -145,7 +145,7 @@ Phone matching = trimmed, not digit-normalized.
 | 6. Live-DB-copy migration test | ✅ 20/20 — rewound a `Connection.backup()` copy of the live DB by dropping `ux_customers_name_phone`, injected 3 dup groups (case/whitespace, `created_at` tie, NULL-vs-'' phone); verified keeper = earliest `created_at` / lowest rowid, balance = SUM, invoices repointed, unique index created + rejects, re-run is a no-op, real rows preserved |
 | 7a. WAL smoke | ✅ launched the debug binary against the live DB: `journal_mode=delete` → `wal`, `-wal`/`-shm` present while running, persists after exit, `PRAGMA integrity_check = ok`, data intact (2 customers / 19 invoices), relaunch in WAL works |
 | 7b. UI smoke | ⏳ **not run** — dashboard "Sales today" == Reports "Today"; POS walk-in duplicate reuse; customer Orders count vs history; Excel row count + NET SALES row |
-| 7c. Restore end-to-end | ⏳ **not run** — `remove_stale_wal_files` call sites are unit-tested only |
+| 7c. Restore end-to-end | ✅ **run 2026-10-08** — a real restore executed in production: log `2026-10-08 10:47:54 UTC` matches `pre_restore_20261008_104754.sqlite`, **zero errors**, live DB 233,472 B / 57 pages / `schema_cookie 66` identical to both backups. Hardened further same day (backup/restore session in HANDOFF.md): `remove_stale_wal_files` now fatal + unit-tested, full validation suite added |
 
 **Corrections made during implementation:** current SQLite numbers `synchronous` as `0=OFF, 1=NORMAL, 2=FULL, 3=EXTRA` (the test originally asserted `2`); migrations 017 + 018 were already applied to the live DB (the note at HANDOFF line 49 was stale), so gate 6 had to drop the index to reach the pre-018 state.
 
