@@ -378,9 +378,10 @@ CREATE UNIQUE INDEX idx_app_settings_key ON app_settings(key);
                                       └─────────────────────┬─────────────────────┘
                                                             │
                                        ┌────────────────────┴────────────────────┐
-                                       │ Realtime Event & Auto-Print Dispatch    │
-                                       │ 1. Emit `invoices_changed` IPC event   │
-                                       │ 2. Trigger `print_receipt` IPC command │
+                                       │ Realtime Event Dispatch (Manual Print)  │
+                                       │ 1. Emit `invoices_changed` IPC event    │
+                                       │ 2. No auto-print: receipt prints only   │
+                                       │    via "Print receipt" manual buttons   │
                                        └─────────────────────────────────────────┘
 ```
 
@@ -514,7 +515,7 @@ The frontend interacts with Rust backend commands exclusively through `apiInvoke
 | **Invoices** | `create_invoice` | `commands/invoices.rs` | `apiClient.invoices.create` | Atomic invoice checkout; reads customer balance → `previous_balance`; computes total; validates stock; updates balance |
 | **Invoices** | `list_invoices` | `commands/invoices.rs` | `apiClient.invoices.list` | Fetches newest 50 invoices or runs server search (cap 200) |
 | **Invoices** | `get_invoice` | `commands/invoices.rs` | `apiClient.invoices.get` | Returns invoice master details + line items |
-| **Print** | `print_receipt` | `commands/print.rs` | `apiClient.invoices.printReceipt` | Generates raster receipt bitmap and prints via Spooler/USB |
+| **Print** | `print_receipt` | `commands/print.rs` | `apiClient.invoices.printReceipt` | Generates raster receipt bitmap and prints via Spooler/USB. **Manual only** (invoices-list Print, detail "Print receipt") — auto-print after POS checkout removed 2026-10-29 |
 | **Print** | `print_invoice_pdf` | `commands/print.rs` | `apiClient.invoices.printInvoicePdf` | Generates A4 PDF invoice file and returns file path |
 | **Returns** | `create_return` | `commands/returns.rs` | `apiClient.returns.create` | Processes one returned line, restores stock, adjusts customer balance |
 | **Returns** | `create_returns_bulk` | `commands/returns.rs` | `apiClient.returns.createBulk` | Submits N lines in **one** transaction (all-or-nothing): restores stock, adjusts the invoice ledger and balance, emits its 3 events once |

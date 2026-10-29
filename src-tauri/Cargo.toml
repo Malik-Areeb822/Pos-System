@@ -1,6 +1,6 @@
 [package]
 name = "moon-pipe-pos"
-version = "1.1.2"
+version = "1.1.3"
 description = "Moon Pipe and Sanitary Store - Offline Point of Sale System"
 authors = ["AUZ tech"]
 license = "MIT"

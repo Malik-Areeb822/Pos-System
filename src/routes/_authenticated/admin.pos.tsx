@@ -11,7 +11,7 @@ import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { currency, type Product } from "@/features/inventory/api";
 import { useCustomersForPOS, type Customer } from "@/features/pos/api";
-import { useCreateInvoice, usePrintReceipt } from "@/features/invoices/api";
+import { useCreateInvoice } from "@/features/invoices/api";
 import { useCreateCustomer } from "@/features/customers/api";
 import { useProductsForPOS } from "@/features/pos/api";
 import { api } from "@/lib/api-client";
@@ -29,7 +29,6 @@ function PosPage() {
   const { data: customers = [] } = useCustomersForPOS();
   const createInvoice = useCreateInvoice();
   const createCustomer = useCreateCustomer();
-  const printReceipt = usePrintReceipt();
 
   const [query, setQuery] = useState("");
   const [scan, setScan] = useState("");
@@ -196,10 +195,6 @@ function PosPage() {
     },
     onSuccess: (invoiceId) => {
       toast.success("Invoice created");
-      printReceipt.mutate(invoiceId, {
-        onSuccess: () => toast.success("Receipt sent to printer"),
-        onError: (err: Error) => toast.error(`Receipt printing failed: ${err.message}`),
-      });
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       queryClient.invalidateQueries({ queryKey: ["pos-customers"] });

@@ -7,8 +7,59 @@
 > **Constraint**: Zero functional changes to core POS behavior
 > **Status**: 🟢 **v1.1.2 BUILT AND SIGNED (rebuilt) — awaiting install.** Backup & Restore hardening **implemented** (see 🗄️ session below): restore is now a 10-step guarded swap (live-DB guard, WAL sidecar staging, migration-version check, fatal pre-restore snapshot, rollback on failure); `list_backups` is admin-gated; ms-resolution backup filenames; Settings gets a real error state. Gates: `cargo test --lib` **63 / 0 / 1** (was 55), clippy **38** (baseline 39), lint **0 errors / 6 warnings**, tsc **14** (= baseline), `npx tauri build` EXIT 0, signtool sign+verify ×2 = **Successfully verified**. Install **1.1.1 first, then 1.1.2** (1.1.1 fixes the CHECK crash; 1.1.2 adds the bulk path + hardened restore).
 > **Next**: user manual UI smoke (Gate 7b) + git commit (user handles). ⛔ **Never roll back below 1.1.0** — migrations 016-018; a build lacking them exits at launch.
-> **Date**: 2026-10-08
-> **Phase**: Phase C release — multi-line returns + backup/restore hardening
+> **Date**: 2026-10-29 (latest session: manual-print hotfix — **v1.1.3 built + signed, awaiting install**)
+> **Phase**: Phase C — v1.1.3 (manual-print-only) awaiting install; v1.1.2 install still pending on client
+
+---
+
+## 🖨️ Session 2026-10-29: POS auto-print removed — manual print only
+
+**Status**: ✅ **CODE + BUILD COMPLETE — v1.1.3 built and signed, awaiting install. Uncommitted code changes.** One-file frontend change per owner request: the thermal receipt that auto-printed on sale completion is disabled. Receipts now print **only** via the manual **Print receipt** buttons (invoices list + invoice detail — the page checkout navigates to).
+
+### Changes
+
+| File | Change |
+|---|---|
+| `src/routes/_authenticated/admin.pos.tsx` | Removed `printReceipt.mutate(...)` block from checkout `onSuccess`; removed `usePrintReceipt` import + hook call. `toast.success("Invoice created")`, all 5 `invalidateQueries`, and the navigate-to-detail are byte-identical (the removed call was fire-and-forget) |
+| `PROJECT_ARCHITECTURE.md` | §4A workflow box → "Realtime Event Dispatch (Manual Print)" rows; §5 `print_receipt` IPC row → "Manual only" note |
+| `HANDOFF.md` | Locked Decisions "Receipt triggers" → **Manual print only**; this session block |
+
+### Impact analysis (audited before edit)
+
+| Area | Verdict |
+|---|---|
+| Other print triggers | Invoices-list Print (`admin.invoices.index.tsx:47`) + detail "Print receipt" (`admin.invoices.$invoiceId.tsx:101`) — **untouched**; `usePrintReceipt` hook kept in `features/invoices/api.ts` (still consumed by both) |
+| Backend | **Zero Rust changes** — `print_receipt` is a passive IPC command; grep confirms nothing else triggers printing; `window.print()` = 0 usages anywhere |
+| Data | No migration, no DB contact — client's inventory/sales/customers/suppliers untouched; no downgrade-rule impact (stays in the 1.1.x family) |
+| Print pipeline | `services/print.rs` / `receipt_bitmap.rs` untouched — manual receipts identical |
+
+### Gates
+
+| Gate | Result |
+|---|---|
+| `npx tsc --noEmit` | ✅ exactly **14** errors (= baseline; the 3 pre-existing in `admin.pos.tsx` line-shifted) |
+| `npm run lint` | ✅ **0 errors / 6 warnings** (= baseline) |
+| Cargo gates | n/a — no Rust changes |
+
+### Behavior note (deliberate)
+
+Nothing prints if no one clicks Print after checkout (owner-requested). Nothing prints from wires is expected — 7b-style manual smoke: one checkout → no receipt fires → "Print receipt" on the detail page → correct content.
+
+### Release build (2026-10-29, v1.1.3)
+
+| Step | Result |
+|------|--------|
+| Version bump | **1.1.3** in both `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` (match confirmed by the build) |
+| Build | `npx tauri build` — ✓ 7m34s cargo release, SPA build, WiX + makensis, 2 bundles; 34 pre-existing cargo warnings, 0 errors; no running-app lock (checked before build) |
+| Sign | signtool (`10.0.26100.0\x64`, PATH lacked it) SHA-256 + DigiCert RFC3161 ×2 — "Successfully signed" both |
+| Verify | `signtool verify /pa /v` ×2 — **Successfully verified** both; signer `CN=AZ Solutions` thumbprint `2D1CFE03D65E62BF992595D5E372BCDE5BC6E74A`; `Get-AuthenticodeSignature` = **Valid** both |
+| Exe file version | `moon-pipe-pos.exe` = **1.1.3** |
+
+**Artifacts (both signed, `Valid`):**
+- `src-tauri\target\release\bundle\msi\Moon Pipe POS_1.1.3_x64_en-US.msi` — 9,932,800 bytes
+- `src-tauri\target\release\bundle\nsis\Moon Pipe POS_1.1.3_x64-setup.exe` — 7,338,448 bytes
+
+**Install (client machine):** back up `C:\ProgramData\MoonPipe\moonpipe.db` first → install `Moon Pipe POS_1.1.3_x64-setup.exe` over 1.1.2 (in-place upgrade; DB/jwt.key/backups untouched) → file version must read 1.1.3, publisher AZ Solutions → acceptance smoke: one checkout (no auto-print) → manual "Print receipt" → correct receipt. **Never below 1.1.0.** Git commit = user's.
 
 ---
 
@@ -1373,7 +1424,7 @@ remain unused by the UI; these semantic gaps are recorded so nobody "fixes" them
 | Stock policy | **Hard block on oversell** — invoice creation validates per-product stock in-transaction (aggregated across cart lines); no negative stock from sales, delivery date or not (2026-08-23) |
 | Seed products | 20 examples ship via migration 004 |
 | Printing | Receipts: **raster bitmap** (`GS v 0`) with bundled POS typefaces — Cormorant Garamond Bold banner + Karla body (`receipt_bitmap.rs`); device order = Windows spooler **RAW** first, direct USB fallback; classic ESC/POS text mode kept as automatic fallback; A4 genpdf invoices via "Download A4 PDF" (2026-08-23) |
-| Receipt triggers | Auto-print after POS checkout + manual buttons (invoices list Print, detail "Print receipt"); `window.print()` is banned from receipt flows — no print dialogs, no WebView downloads |
+| Receipt triggers | **Manual print only** — manual buttons (invoices list Print, detail "Print receipt"); auto-print after POS checkout **removed 2026-10-29** by owner request; `window.print()` is banned from receipt flows — no print dialogs, no WebView downloads |
 | Exports | All Excel exports funnel through `lib/file-save.ts`: native Save As dialog → plugin-fs write. Inventory export headers must stay in lockstep with importer aliases (round-trip contract) |
 | Migrations | **Immutable once applied** — never edit files in `src-tauri/src/database/migrations/`; LF endings pinned via `.gitattributes`; corrections go in new numbered migrations (2026-08-23) |
 | Public `/website/*` routes | **Deleted from app** (2026-08-23): routes, SiteShell/InquiryForm, Supabase dep removed |
